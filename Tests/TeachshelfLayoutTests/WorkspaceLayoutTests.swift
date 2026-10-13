@@ -18,7 +18,7 @@ import TeachshelfCore
         _ = try repository.importFiles(urls: [source], courseID: course.id, category: "课件", copy: true)
         try repository.saveTask(StudyTask(title: "复习线性变换", courseID: course.id, deadline: Date().addingTimeInterval(86400)))
         let store = AppStore(repository: repository, remembersLocation: false)
-        let host = NSHostingView(rootView: ContentView().environmentObject(store))
+        let host = NSHostingView(rootView: ContentView().appTheme().environmentObject(store))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1020, height: 680), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host

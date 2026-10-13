@@ -4,6 +4,7 @@ import TeachshelfCore
 
 struct TaskEditor: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.appTheme) private var theme
     @Environment(\.dismiss) private var dismiss
     @ViewState<StudyTask> private var draft: StudyTask
     @ViewState<Bool> private var hasDeadline: Bool
@@ -29,7 +30,7 @@ struct TaskEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Image(systemName: "checklist").font(.title2).foregroundStyle(AppPalette.accent)
+                Image(systemName: "checklist").font(.title2).foregroundStyle(theme.ink)
                 Text(isNew ? "新建待办" : "编辑待办").font(.title2.weight(.semibold))
                 Spacer()
             }.padding(24)
@@ -115,7 +116,7 @@ struct TaskEditor: View {
                         dismiss()
                     } catch { store.report(error) }
                 }
-                .buttonStyle(.borderedProminent)
+                .appPrimaryButton()
                 .disabled(draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isBusy || draft.isArchived)
                 .keyboardShortcut(.defaultAction)
             }.padding(20)

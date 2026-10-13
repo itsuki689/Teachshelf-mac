@@ -5,6 +5,7 @@ import TeachshelfCore
 
 struct LibraryWorkspace: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.appTheme) private var theme
     @AppStorage("libraryPresentation") private var presentation = "list"
     @ViewState private var dropTarget = false
     @ViewState private var showInspector = true
@@ -17,11 +18,11 @@ struct LibraryWorkspace: View {
                 let tasks = store.state.tasks.filter { $0.courseID == courseID && !$0.isArchived && !$0.isCompleted }
                 if !tasks.isEmpty {
                     HStack(spacing: 12) {
-                        Label("\(tasks.count) 个未完成待办", systemImage: "checklist").font(.caption.weight(.medium)).foregroundStyle(AppPalette.accent)
+                        Label("\(tasks.count) 个未完成待办", systemImage: "checklist").font(.caption.weight(.medium)).foregroundStyle(.primary)
                         Text(tasks.prefix(2).map(\.title).joined(separator: "  ·  ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         Spacer()
                         Button("查看待办") { store.navigate(to: .tasks) }.buttonStyle(.link).font(.caption)
-                    }.padding(.horizontal, 24).padding(.vertical, 10).background(AppPalette.accent.opacity(0.06))
+                    }.padding(.horizontal, 24).padding(.vertical, 10).background(theme.ink.opacity(0.06))
                 }
             }
             Divider()
@@ -33,7 +34,7 @@ struct LibraryWorkspace: View {
                             Button(store.state.materials.isEmpty ? "导入第一份资料" : "清除筛选") {
                                 if store.state.materials.isEmpty { store.chooseImport() }
                                 else { store.search = ""; store.categoryFilter = "全部类别"; store.formatFilter = "全部格式" }
-                            }.buttonStyle(.borderedProminent).padding(.bottom, 100)
+                            }.appPrimaryButton().padding(.bottom, 100)
                         }
                     } else if presentation == "covers" { coverGrid }
                     else { materialTable }
@@ -46,8 +47,8 @@ struct LibraryWorkspace: View {
         .background(Color(nsColor: .textBackgroundColor))
         .overlay {
             if dropTarget {
-                RoundedRectangle(cornerRadius: 12).fill(AppPalette.accent.opacity(0.08)).overlay {
-                    RoundedRectangle(cornerRadius: 12).strokeBorder(AppPalette.accent, style: StrokeStyle(lineWidth: 2, dash: [8, 5]))
+                RoundedRectangle(cornerRadius: 12).fill(theme.selection).overlay {
+                    RoundedRectangle(cornerRadius: 12).strokeBorder(theme.ink, style: StrokeStyle(lineWidth: 2, dash: [8, 5]))
                 }.padding(8).allowsHitTesting(false)
             }
         }
@@ -79,7 +80,7 @@ struct LibraryWorkspace: View {
                 Picker("视图", selection: $presentation) {
                     Image(systemName: "list.bullet").tag("list")
                     Image(systemName: "square.grid.2x2").tag("covers")
-                }.labelsHidden().pickerStyle(.segmented).frame(width: 82).help("列表 / 封面")
+                }.labelsHidden().pickerStyle(.segmented).tint(theme.controlAccent).frame(width: 82).help("列表 / 封面")
                 Button { showInspector.toggle() } label: { Image(systemName: "sidebar.right") }.buttonStyle(.borderless).help("资料信息")
             }
             HStack(spacing: 10) {
@@ -142,7 +143,7 @@ struct LibraryWorkspace: View {
                             Spacer(minLength: 0)
                             if material.isFavorite { Image(systemName: "star.fill").foregroundStyle(.orange) }
                         }.font(.system(size: 10)).foregroundStyle(.secondary)
-                    }.padding(10).background(store.selectedMaterialIDs.contains(material.id) ? AppPalette.accent.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 9))
+                    }.padding(10).background(store.selectedMaterialIDs.contains(material.id) ? theme.selection : .clear, in: RoundedRectangle(cornerRadius: 9))
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) { store.openMaterial(material) }
                         .onTapGesture { store.selectMaterials([material.id]) }

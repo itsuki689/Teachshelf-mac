@@ -3,6 +3,7 @@ import TeachshelfCore
 
 struct ContentView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.appTheme) private var theme
     var body: some View {
         // Page-specific intrinsic widths must not change the scene's resize limits.
         GeometryReader { windowGeometry in
@@ -24,7 +25,7 @@ struct ContentView: View {
                         Divider()
                         HStack(spacing: 8) {
                             if store.isBusy { ProgressView().controlSize(.small) }
-                            else { Image(systemName: "circle.fill").font(.system(size: 5)).foregroundStyle(AppPalette.accent) }
+                            else { Image(systemName: "circle.fill").font(.system(size: 5)).foregroundStyle(theme.ink) }
                             Text(store.status).lineLimit(1)
                             Spacer()
                             Text("本地资料库").foregroundStyle(.tertiary)
@@ -45,7 +46,6 @@ struct ContentView: View {
             .navigationSplitViewStyle(.balanced)
             .frame(width: windowGeometry.size.width, height: windowGeometry.size.height)
         }
-        .tint(Color(hex: store.state.accentColor))
         .frame(minWidth: 1020, minHeight: 680)
         .background(WindowCloseGuard(store: store))
         .disabled(store.isBusy)
@@ -60,7 +60,7 @@ struct ContentView: View {
     private var sidebar: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: "books.vertical.fill").font(.system(size: 22)).foregroundStyle(AppPalette.accent)
+                Image(systemName: "books.vertical.fill").font(.system(size: 22)).foregroundStyle(theme.ink)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Teachshelf").font(.system(size: 19, weight: .semibold, design: .rounded))
                     Text("每一份知识，都有位置").font(.system(size: 10)).foregroundStyle(.secondary)
@@ -70,7 +70,7 @@ struct ContentView: View {
             ChoiceMenu("学期", selection: $store.semester, selectedTitle: store.semester) {
                 ForEach(store.semesters, id: \.self) { Text($0).tag($0) }
             }.padding(.horizontal, 14).padding(.bottom, 10)
-            List(selection: Binding(get: { store.navigation }, set: { store.navigate(to: $0) })) {
+            List {
                 Section("资料库") {
                     navRow("全部资料", "tray.full", .all, count: store.state.materials.count)
                     navRow("我的收藏", "star", .favorites, count: store.state.materials.filter(\.isFavorite).count)
@@ -87,12 +87,24 @@ struct ContentView: View {
                         ForEach(["当前课程", "已归档课程", "全部课程"], id: \.self) { Text($0).tag($0) }
                     }
                     ForEach(store.sidebarCourses) { course in
-                        HStack(spacing: 9) {
-                            RoundedRectangle(cornerRadius: 4).fill(Color(hex: course.colorHex)).frame(width: 12, height: 12)
-                            Text(course.name).lineLimit(1)
-                            Spacer(minLength: 4)
-                            Text("\(store.state.materials.filter { $0.courseID == course.id }.count)").font(.caption).foregroundStyle(.tertiary)
-                        }.padding(.vertical, 3).tag(SidebarSelection.course(course.id))
+                        Button { store.navigate(to: .course(course.id)) } label: {
+                            HStack(spacing: 9) {
+                                RoundedRectangle(cornerRadius: 4).fill(Color(hex: course.colorHex)).frame(width: 12, height: 12)
+                                Text(course.name).lineLimit(1)
+                                Spacer(minLength: 4)
+                                Text("\(store.state.materials.filter { $0.courseID == course.id }.count)").font(.caption).foregroundStyle(.secondary)
+                            }.padding(.horizontal, 9).padding(.vertical, 7)
+                                .background(store.navigation == .course(course.id) ? theme.selection : .clear, in: RoundedRectangle(cornerRadius: 7))
+                                .overlay {
+                                    if store.state.showCourseBorders {
+                                        RoundedRectangle(cornerRadius: 7).strokeBorder(Color(hex: course.colorHex).opacity(0.6), lineWidth: 1)
+                                    }
+                                }
+                                .contentShape(RoundedRectangle(cornerRadius: 7))
+                        }.buttonStyle(.plain)
+                            .foregroundStyle(.primary)
+                            .fontWeight(store.navigation == .course(course.id) ? .semibold : .regular)
+                            .accessibilityAddTraits(store.navigation == .course(course.id) ? .isSelected : [])
                             .contextMenu {
                                 Button("编辑课程…") { store.courseToEdit = course; store.showingCourseEditor = true }
                                 Button(course.isArchived ? "恢复课程" : "归档课程") { store.perform { try store.repository.archiveCourse(id: course.id, archived: !course.isArchived) } }
@@ -108,14 +120,31 @@ struct ContentView: View {
                 }
                 Section { navRow("设置", "gearshape", .settings) }
             }.listStyle(.sidebar)
+                .focusable().focusEffectDisabled()
+                .onKeyPress(.downArrow) { moveSidebar(1); return .handled }
+                .onKeyPress(.upArrow) { moveSidebar(-1); return .handled }
         }
     }
     private func navRow(_ title: String, _ symbol: String, _ selection: SidebarSelection, count: Int? = nil) -> some View {
-        HStack {
-            Label(title, systemImage: symbol)
-            Spacer()
-            if let count, count > 0 { Text("\(count)").font(.caption).foregroundStyle(.secondary) }
-        }.padding(.vertical, 2).tag(selection)
+        Button { store.navigate(to: selection) } label: {
+            HStack {
+                Label(title, systemImage: symbol)
+                Spacer()
+                if let count, count > 0 { Text("\(count)").font(.caption).foregroundStyle(.secondary) }
+            }.padding(.horizontal, 9).padding(.vertical, 7)
+                .background(store.navigation == selection ? theme.selection : .clear, in: RoundedRectangle(cornerRadius: 7))
+                .contentShape(RoundedRectangle(cornerRadius: 7))
+        }.buttonStyle(.plain)
+            .foregroundStyle(.primary)
+            .fontWeight(store.navigation == selection ? .semibold : .regular)
+            .accessibilityAddTraits(store.navigation == selection ? .isSelected : [])
+    }
+
+    private func moveSidebar(_ offset: Int) {
+        let destinations: [SidebarSelection] = [.all, .favorites, .recent, .unassigned, .homework, .tasks, .calendar]
+            + store.sidebarCourses.map { .course($0.id) } + [.settings]
+        let index = store.navigation.flatMap { destinations.firstIndex(of: $0) } ?? 0
+        store.navigate(to: destinations[min(max(index + offset, 0), destinations.count - 1)])
     }
 }
 
@@ -133,24 +162,23 @@ struct WorkspaceSplitView<Content: View>: View {
     }
 }
 
-enum AppPalette { static let accent = Color(hex: "#39786B") }
 extension Color {
     init(hex: String) {
-        let value = UInt64(hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) ?? 0x39786B
-        self.init(.sRGB, red: Double((value >> 16) & 255) / 255, green: Double((value >> 8) & 255) / 255, blue: Double(value & 255) / 255, opacity: 1)
+        self.init(rgb: RGBColor(hex: hex) ?? RGBColor(hex: ColorPalette.defaultAccent)!)
     }
     var hexString: String {
         let color = NSColor(self).usingColorSpace(.sRGB) ?? .systemTeal
-        return String(format: "#%02X%02X%02X", Int((color.redComponent * 255).rounded()), Int((color.greenComponent * 255).rounded()), Int((color.blueComponent * 255).rounded()))
+        return RGBColor(red: color.redComponent, green: color.greenComponent, blue: color.blueComponent).hex
     }
 }
 struct EmptyStateView: View {
+    @Environment(\.appTheme) private var theme
     let symbol: String
     let title: String
     let detail: String
     var body: some View {
         VStack(spacing: 13) {
-            Image(systemName: symbol).font(.system(size: 42, weight: .light)).foregroundStyle(AppPalette.accent.opacity(0.65))
+            Image(systemName: symbol).font(.system(size: 42, weight: .light)).foregroundStyle(theme.ink.opacity(0.65))
             Text(title).font(.title3.weight(.semibold))
             Text(detail).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 330)
         }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(30)

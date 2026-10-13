@@ -7,7 +7,7 @@ import AppKit
 
     var body: some Scene {
         WindowGroup("Teachshelf") {
-            ContentView().environmentObject(store)
+            ContentView().appTheme().environmentObject(store)
                 .preferredColorScheme(store.state.appearance == "dark" ? .dark : store.state.appearance == "light" ? .light : nil)
                 .onAppear { delegate.store = store; NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true) }
         }
@@ -35,7 +35,11 @@ import AppKit
                 Button("撤销待办删除") { store.undoTaskDeletion() }.keyboardShortcut("z", modifiers: [.command, .option]).disabled(!store.canUndoTaskDeletion)
             }
         }
-        Settings { SettingsWorkspace().environmentObject(store).frame(width: 650, height: 600) }
+        Settings {
+            SettingsWorkspace().appTheme().environmentObject(store)
+                .preferredColorScheme(store.state.appearance == "dark" ? .dark : store.state.appearance == "light" ? .light : nil)
+                .frame(width: 650, height: 600)
+        }
     }
 }
 

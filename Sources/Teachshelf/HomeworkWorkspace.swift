@@ -6,6 +6,7 @@ import TeachshelfCore
 
 struct HomeworkWorkspace: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.appTheme) private var theme
     @ViewState<UUID?> private var courseID: UUID?
     @ViewState<String> private var relativePath = ""
     @ViewState<[WorkspaceEntry]> private var entries: [WorkspaceEntry] = []
@@ -36,7 +37,7 @@ struct HomeworkWorkspace: View {
                 }
                 Spacer()
                 Button { chooseImport() } label: { Label("添加文件", systemImage: "plus") }
-                    .buttonStyle(.borderedProminent).controlSize(.regular).disabled(store.isBusy)
+                    .appPrimaryButton().controlSize(.regular).disabled(store.isBusy)
             }.padding(24)
 
             HStack(spacing: 12) {
@@ -87,7 +88,7 @@ struct HomeworkWorkspace: View {
             ZStack {
                 if visibleEntries.isEmpty {
                     VStack(spacing: 14) {
-                        Image(systemName: "folder.badge.plus").font(.system(size: 54, weight: .light)).foregroundStyle(AppPalette.accent.opacity(0.7))
+                        Image(systemName: "folder.badge.plus").font(.system(size: 54, weight: .light)).foregroundStyle(theme.ink.opacity(0.7))
                         Text(search.isEmpty ? "给作业留一个位置" : "没有找到匹配的文件").font(.title2.weight(.semibold))
                         Text(search.isEmpty ? "把文件和文件夹拖到这里，或点击「添加文件」。" : "试试其他名称。").foregroundStyle(.secondary)
                         if search.isEmpty { Button("添加文件…") { chooseImport() }.buttonStyle(.bordered) }
@@ -123,8 +124,8 @@ struct HomeworkWorkspace: View {
                     } primaryAction: { ids in openSelection(ids) }
                 }
                 if isDropTargeted {
-                    RoundedRectangle(cornerRadius: 12).fill(AppPalette.accent.opacity(0.12))
-                        .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(AppPalette.accent, style: StrokeStyle(lineWidth: 2, dash: [7])) }
+                    RoundedRectangle(cornerRadius: 12).fill(theme.selection)
+                        .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(theme.ink, style: StrokeStyle(lineWidth: 2, dash: [7])) }
                         .padding(8).allowsHitTesting(false)
                 }
             }

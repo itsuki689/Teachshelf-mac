@@ -1,17 +1,20 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import TeachshelfCore
 
 struct SettingsWorkspace: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.appTheme) private var theme
+    @ViewState private var accentSession: AccentEditingSession?
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 25) {
                 HStack(spacing: 14) {
-                    Image(systemName: "books.vertical.fill").font(.system(size: 32)).foregroundStyle(AppPalette.accent)
+                    Image(systemName: "books.vertical.fill").font(.system(size: 32)).foregroundStyle(theme.ink)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("你的学习空间").font(.system(size: 26, weight: .bold, design: .rounded))
-                        Text("Teachshelf for macOS · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.1")").font(.callout).foregroundStyle(.secondary)
+                        Text("Teachshelf for macOS · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.1.0")").font(.callout).foregroundStyle(.secondary)
                     }
                 }.padding(.bottom, 4)
                 settingsCard("外观", symbol: "paintpalette") {
@@ -20,8 +23,26 @@ struct SettingsWorkspace: View {
                         Spacer()
                         Picker("显示模式", selection: Binding(get: { store.state.appearance }, set: { value in store.perform { try store.repository.saveAppearance(value) } })) {
                             Text("跟随系统").tag("system"); Text("浅色").tag("light"); Text("深色").tag("dark")
-                        }.labelsHidden().pickerStyle(.segmented).frame(width: 260)
+                        }.labelsHidden().pickerStyle(.segmented).tint(theme.controlAccent).frame(width: 260)
                     }
+                    Divider()
+                    HStack(spacing: 12) {
+                        RoundedRectangle(cornerRadius: 7).fill(Color(hex: store.effectiveAccentHex)).frame(width: 32, height: 32)
+                            .overlay { RoundedRectangle(cornerRadius: 7).strokeBorder(.quaternary, lineWidth: 1) }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("强调色")
+                            Text(store.effectiveAccentHex).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("调整强调色…") {
+                            if let id = store.beginAccentPreview() { accentSession = AccentEditingSession(id: id) }
+                        }.disabled(store.isBusy || store.accentPreviewID != nil)
+                    }
+                    Toggle("显示课程色边框", isOn: Binding(
+                        get: { store.state.showCourseBorders },
+                        set: { enabled in store.perform { try store.repository.saveCourseBorders(enabled) } }
+                    )).tint(theme.controlAccent)
+                    Text("课程标记与边框使用各课程的颜色，强调色用于界面操作。").font(.caption).foregroundStyle(.secondary)
                     Text("列表与封面视图可在资料页右上角切换。文件预览使用 macOS 快速查看。").font(.caption).foregroundStyle(.secondary)
                 }
                 settingsCard("资料库", symbol: "internaldrive") {
@@ -53,6 +74,9 @@ struct SettingsWorkspace: View {
                 }
             }.padding(32).frame(maxWidth: 780, alignment: .leading).frame(maxWidth: .infinity, alignment: .topLeading)
         }.background(Color(nsColor: .windowBackgroundColor))
+            .sheet(item: $accentSession) { session in
+                AccentColorEditor(sessionID: session.id).environmentObject(store)
+            }
     }
     private func settingsCard<Content: View>(_ title: String, symbol: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 15) {

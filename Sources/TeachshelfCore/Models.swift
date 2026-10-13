@@ -89,9 +89,26 @@ public struct LibraryState: Codable, Hashable, Sendable {
     public var materials: [MaterialRecord] = []
     public var tasks: [StudyTask] = []
     public var customCategories: [String] = []
-    public var accentColor: String = "#39786B"
+    public var accentColor: String = ColorPalette.defaultAccent
     public var appearance: String = "system"
+    public var showCourseBorders: Bool = true
     public init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, courses, materials, tasks, customCategories, accentColor, appearance, showCourseBorders
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try values.decode(Int.self, forKey: .schemaVersion)
+        courses = try values.decode([Course].self, forKey: .courses)
+        materials = try values.decode([MaterialRecord].self, forKey: .materials)
+        tasks = try values.decode([StudyTask].self, forKey: .tasks)
+        customCategories = try values.decode([String].self, forKey: .customCategories)
+        accentColor = try values.decode(String.self, forKey: .accentColor)
+        appearance = try values.decode(String.self, forKey: .appearance)
+        showCourseBorders = values.contains(.showCourseBorders) ? try values.decode(Bool.self, forKey: .showCourseBorders) : true
+    }
 }
 
 public struct WorkspaceEntry: Identifiable, Hashable, Sendable {

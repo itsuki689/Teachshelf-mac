@@ -29,8 +29,39 @@ enum SidebarSelection: Hashable {
     @Published var importURLs: [URL] = []
     @Published var courseToEdit: Course?
     @Published var showingCourseEditor = false
+    @Published private(set) var previewAccentHex: String?
+    @Published private(set) var accentPreviewID: UUID?
     private let remembersLocation: Bool
     var beforeLeavingMaterial: (() -> Bool)?
+
+    var effectiveAccentHex: String { previewAccentHex ?? state.accentColor }
+
+    func beginAccentPreview() -> UUID? {
+        guard !isBusy, accentPreviewID == nil else { return nil }
+        let id = UUID()
+        accentPreviewID = id; previewAccentHex = state.accentColor
+        return id
+    }
+
+    func previewAccent(_ hex: String, sessionID: UUID) {
+        guard accentPreviewID == sessionID, let color = RGBColor(hex: hex) else { return }
+        previewAccentHex = color.hex
+    }
+
+    func cancelAccentPreview(sessionID: UUID) {
+        guard accentPreviewID == sessionID else { return }
+        previewAccentHex = nil; accentPreviewID = nil
+    }
+
+    func saveAccentPreview(sessionID: UUID) -> Bool {
+        guard !isBusy, accentPreviewID == sessionID, let hex = previewAccentHex else { return false }
+        do {
+            try repository.saveAccentColor(hex)
+            reload(); cancelAccentPreview(sessionID: sessionID)
+            status = "强调色已保存"
+            return true
+        } catch { report(error); return false }
+    }
 
     func navigate(to destination: SidebarSelection?) {
         guard destination != navigation else { return }
@@ -210,6 +241,7 @@ enum SidebarSelection: Hashable {
                 return try LibraryRepository(root: target)
             }.value
             if remembersLocation { UserDefaults.standard.set(target.path, forKey: "libraryPath") }
+            if let id = accentPreviewID { cancelAccentPreview(sessionID: id) }
             repository = next; selectedMaterialIDs = []; workspaceCourseID = nil; search = ""; semester = "全部学期"; categoryFilter = "全部类别"; formatFilter = "全部格式"; navigation = .all
             reload(); status = "已切换资料库，原目录保留"
         } catch { report(error) }

@@ -11,6 +11,7 @@ private enum TaskWorkspaceFilter: String, CaseIterable {
 
 struct TaskWorkspace: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.appTheme) private var theme
     @ViewState<String> private var search = ""
     @ViewState<TaskWorkspaceFilter> private var filter = TaskWorkspaceFilter.active
     @ViewState<UUID?> private var courseID: UUID?
@@ -55,7 +56,7 @@ struct TaskWorkspace: View {
                 }
                 Spacer()
                 Button { creating = true } label: { Label("新建待办", systemImage: "plus") }
-                    .buttonStyle(.borderedProminent).controlSize(.regular)
+                    .appPrimaryButton().controlSize(.regular)
             }.padding(24)
 
             ViewThatFits(in: .horizontal) {
@@ -85,7 +86,7 @@ struct TaskWorkspace: View {
                             TableColumn("完成") { task in
                                 Button { store.setTaskCompleted(task) } label: {
                                     Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
-                                        .font(.title3).foregroundStyle(task.isCompleted ? AppPalette.accent : Color.secondary)
+                                        .font(.title3).foregroundStyle(task.isCompleted ? theme.ink : Color.secondary)
                                 }.buttonStyle(.plain).help(task.isCompleted ? "标为未完成" : "完成待办").disabled(task.isArchived)
                             }.width(42)
                             TableColumn("任务") { task in
@@ -148,7 +149,7 @@ struct TaskWorkspace: View {
     private var statusPicker: some View {
         Picker("状态", selection: $filter) {
             ForEach(TaskWorkspaceFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-        }.labelsHidden().pickerStyle(.segmented).frame(maxWidth: 410)
+        }.labelsHidden().pickerStyle(.segmented).tint(theme.controlAccent).frame(maxWidth: 410)
     }
 
     private var searchField: some View {
@@ -169,7 +170,7 @@ struct TaskWorkspace: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack {
-                    Text(task.kind).font(.caption.weight(.medium)).padding(.horizontal, 9).padding(.vertical, 4).background(AppPalette.accent.opacity(0.1), in: Capsule())
+                    Text(task.kind).font(.caption.weight(.medium)).padding(.horizontal, 9).padding(.vertical, 4).background(theme.selection, in: Capsule())
                     Spacer()
                     Button { editingTask = task } label: { Image(systemName: "pencil") }.help("编辑待办").disabled(task.isArchived)
                 }
@@ -196,7 +197,7 @@ struct TaskWorkspace: View {
                     ForEach(store.state.materials.filter { task.materialIDs.contains($0.id) }) { material in
                         Button { store.openMaterial(material) } label: {
                             HStack {
-                                Image(systemName: "doc.text").foregroundStyle(AppPalette.accent)
+                                Image(systemName: "doc.text").foregroundStyle(theme.ink)
                                 Text(material.title).lineLimit(2)
                                 Spacer()
                                 Image(systemName: "arrow.up.right").foregroundStyle(.secondary)

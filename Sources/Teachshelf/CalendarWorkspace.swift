@@ -4,6 +4,7 @@ import TeachshelfCore
 
 struct CalendarWorkspace: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.appTheme) private var theme
     @ViewState<Date> private var month = Calendar.current.startOfDay(for: Date())
     @ViewState<Date> private var selectedDay = Calendar.current.startOfDay(for: Date())
     @ViewState<UUID?> private var courseID: UUID?
@@ -40,7 +41,7 @@ struct CalendarWorkspace: View {
                 }
                 Spacer()
                 Button { creating = true } label: { Label("新建待办", systemImage: "plus") }
-                    .buttonStyle(.borderedProminent).controlSize(.regular)
+                    .appPrimaryButton().controlSize(.regular)
             }.padding(24)
 
             HStack(spacing: 14) {
@@ -108,7 +109,7 @@ struct CalendarWorkspace: View {
 
     private func courseColor(_ task: StudyTask) -> Color {
         if let course = store.state.courses.first(where: { $0.id == task.courseID }) { return Color(hex: course.colorHex) }
-        return AppPalette.accent
+        return theme.ink
     }
 
     private func dayCell(_ day: Date, height: CGFloat) -> some View {
@@ -126,7 +127,7 @@ struct CalendarWorkspace: View {
                         .font(.callout.weight(isToday || isSelected ? .semibold : .regular))
                         .foregroundStyle(isToday ? Color.white : (sameMonth ? Color.primary : Color.secondary))
                         .frame(width: 25, height: 25)
-                        .background(isToday ? AppPalette.accent : Color.clear, in: Circle())
+                        .background(isToday ? theme.controlAccent : Color.clear, in: Circle())
                     Spacer()
                 }
                 ForEach(Array(dayTasks.prefix(2))) { task in
@@ -141,8 +142,8 @@ struct CalendarWorkspace: View {
             }
             .padding(8)
             .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
-            .background(isSelected ? AppPalette.accent.opacity(0.10) : Color(nsColor: .windowBackgroundColor))
-            .overlay { if isSelected { Rectangle().strokeBorder(AppPalette.accent.opacity(0.65), lineWidth: 1.5) } }
+            .background(isSelected ? theme.selection : Color(nsColor: .windowBackgroundColor))
+            .overlay { if isSelected { Rectangle().strokeBorder(theme.selectionBorder, lineWidth: 1.5) } }
             .opacity(sameMonth ? 1 : 0.55)
             .contentShape(Rectangle())
         }.buttonStyle(.plain)
@@ -152,7 +153,7 @@ struct CalendarWorkspace: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
                 Button { store.setTaskCompleted(task) } label: {
-                    Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(task.isCompleted ? AppPalette.accent : Color.secondary)
+                    Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle").font(.title3).foregroundStyle(task.isCompleted ? theme.ink : Color.secondary)
                 }.buttonStyle(.plain).padding(.top, 1)
                 Button { editingTask = task } label: {
                     Text(task.title).font(.headline).strikethrough(task.isCompleted).frame(maxWidth: .infinity, alignment: .leading)

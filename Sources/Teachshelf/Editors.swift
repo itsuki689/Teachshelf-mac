@@ -35,7 +35,7 @@ struct CourseEditor: View {
                 if course != nil { Button("删除课程…", role: .destructive, action: delete) }
                 Spacer()
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("保存", action: save).buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("保存", action: save).appPrimaryButton().keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }.padding(20)
         }.frame(width: 460, height: 380)
     }
@@ -59,6 +59,7 @@ struct CourseEditor: View {
 
 struct ImportSheet: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.appTheme) private var theme
     @Environment(\.dismiss) private var dismiss
     let urls: [URL]
     @ViewState private var courseID: UUID?
@@ -67,7 +68,7 @@ struct ImportSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Image(systemName: "square.and.arrow.down").font(.title).foregroundStyle(AppPalette.accent)
+                Image(systemName: "square.and.arrow.down").font(.title).foregroundStyle(theme.ink)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("导入资料").font(.title2.weight(.semibold))
                     Text("已选择 \(urls.count) 个文件或文件夹").foregroundStyle(.secondary)
@@ -99,7 +100,7 @@ struct ImportSheet: View {
                     let target = courseID; let chosenCategory = category; let shouldCopy = copy
                     dismiss()
                     Task { await store.importMaterials(urls: urls, courseID: target, category: chosenCategory, copy: shouldCopy) }
-                }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(urls.isEmpty || category.trimmingCharacters(in: .whitespaces).isEmpty)
+                }.appPrimaryButton().keyboardShortcut(.defaultAction).disabled(urls.isEmpty || category.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }.padding(26).frame(width: 490).onAppear { courseID = store.currentCourseID }
     }
@@ -126,7 +127,7 @@ struct MaterialInspector: View {
                 HStack { Text("资料信息").font(.headline); Spacer(); Button { if confirmEdits() { store.selectMaterials([]) } } label: { Image(systemName: "xmark") }.buttonStyle(.plain).foregroundStyle(.secondary) }
                 CoverThumbnail(material: material, url: try? store.repository.resolveURL(material), color: store.courseColor(material.courseID)).frame(width: 130, height: 175).frame(maxWidth: .infinity).padding(.vertical, 5)
                 HStack(spacing: 8) {
-                    Button("打开") { if confirmEdits() { store.openMaterial(material) } }.buttonStyle(.borderedProminent)
+                    Button("打开") { if confirmEdits() { store.openMaterial(material) } }.appPrimaryButton()
                     Button { QuickLookController.shared.show(try? store.repository.resolveURL(material)) } label: { Image(systemName: "eye") }.help("快速查看 · 空格")
                     Button { store.favorite(material) } label: { Image(systemName: material.isFavorite ? "star.fill" : "star").foregroundStyle(material.isFavorite ? .orange : .secondary) }.help("收藏")
                     Button { if let url = try? store.repository.resolveURL(material) { store.revealURL(url) } } label: { Image(systemName: "folder") }.help("在 Finder 中显示")

@@ -285,12 +285,22 @@ public final class LibraryRepository: @unchecked Sendable {
         try commit { $0.appearance = value }
     }
 
+    public func saveAccentColor(_ value: String) throws {
+        guard let color = RGBColor(hex: value) else { throw LibraryError.invalidInput("请输入六位 HEX 颜色，例如 #39786B。") }
+        try commit { $0.accentColor = color.hex }
+    }
+
+    public func saveCourseBorders(_ enabled: Bool) throws {
+        try commit { $0.showCourseBorders = enabled }
+    }
+
     private func ensureCourse(_ id: UUID?) throws {
         if let id, !snapshot.courses.contains(where: { $0.id == id }) { throw LibraryError.missingRecord("课程") }
     }
     private func validate(_ state: LibraryState) throws {
         guard state.schemaVersion == 1 else { throw LibraryError.invalidInput("不支持的资料库版本 \(state.schemaVersion)。") }
         guard ["system", "light", "dark"].contains(state.appearance) else { throw LibraryError.invalidInput("未知的外观设置。") }
+        guard ColorPalette.isStoredColor(state.accentColor) else { throw LibraryError.invalidInput("资料库包含无效的强调色。") }
         guard Set(state.courses.map(\.id)).count == state.courses.count,
               Set(state.materials.map(\.id)).count == state.materials.count,
               Set(state.tasks.map(\.id)).count == state.tasks.count else { throw LibraryError.invalidInput("资料库包含重复的记录编号。") }
