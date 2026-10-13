@@ -69,75 +69,70 @@ struct ContentView: View {
             }.padding(.horizontal, 20).padding(.top, 22).padding(.bottom, 18)
             ChoiceMenu("学期", selection: $store.semester, selectedTitle: store.semester) {
                 ForEach(store.semesters, id: \.self) { Text($0).tag($0) }
+            }.padding(.horizontal, 14).padding(.bottom, 12)
+            HStack(spacing: 5) {
+                libraryShortcut("全部资料", "tray.full", .all, hint: "全部资料 · \(store.state.materials.count) 份")
+                libraryShortcut("我的收藏", "star", .favorites, hint: "我的收藏 · \(store.state.materials.filter(\.isFavorite).count) 份")
+                libraryShortcut("最近打开", "clock", .recent, hint: "最近打开")
+                libraryShortcut("未分类", "tray", .unassigned, hint: "未分类资料")
+            }.padding(.horizontal, 14).padding(.bottom, 12)
+                .accessibilityElement(children: .contain).accessibilityLabel("资料库")
+
+            VStack(spacing: 3) {
+                navRow("作业文件夹", "folder", .homework)
+                navRow("待办", "checklist", .tasks, count: store.pendingTaskCount)
+                navRow("日历", "calendar", .calendar)
+            }.padding(.horizontal, 14)
+            Divider().padding(.horizontal, 20).padding(.vertical, 15)
+            HStack {
+                Text("我的课程").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                Spacer()
+                Button { store.courseToEdit = nil; store.showingCourseEditor = true } label: { Image(systemName: "plus") }
+                    .buttonStyle(.plain).help("新建课程 · ⌘N").accessibilityLabel("新建课程")
+            }.padding(.horizontal, 24).padding(.bottom, 10)
+            ChoiceMenu("课程状态", selection: $store.courseArchiveFilter, selectedTitle: store.courseArchiveFilter, compact: true) {
+                ForEach(["当前课程", "已归档课程", "全部课程"], id: \.self) { Text($0).tag($0) }
             }.padding(.horizontal, 14).padding(.bottom, 10)
-            List {
-                Section("资料库") {
-                    navRow("全部资料", "tray.full", .all, count: store.state.materials.count)
-                    navRow("我的收藏", "star", .favorites, count: store.state.materials.filter(\.isFavorite).count)
-                    navRow("最近打开", "clock", .recent)
-                    navRow("未分类", "tray", .unassigned)
-                }
-                Section("学习") {
-                    navRow("作业文件夹", "folder", .homework)
-                    navRow("待办", "checklist", .tasks, count: store.pendingTaskCount)
-                    navRow("日历", "calendar", .calendar)
-                }
-                Section {
-                    ChoiceMenu("课程状态", selection: $store.courseArchiveFilter, selectedTitle: store.courseArchiveFilter, compact: true) {
-                        ForEach(["当前课程", "已归档课程", "全部课程"], id: \.self) { Text($0).tag($0) }
-                    }
+            ScrollView {
+                LazyVStack(spacing: 6) {
                     ForEach(store.sidebarCourses) { course in
-                        Button { store.navigate(to: .course(course.id)) } label: {
-                            HStack(spacing: 9) {
-                                RoundedRectangle(cornerRadius: 4).fill(Color(hex: course.colorHex)).frame(width: 12, height: 12)
-                                Text(course.name).lineLimit(1)
-                                Spacer(minLength: 4)
-                                Text("\(store.state.materials.filter { $0.courseID == course.id }.count)").font(.caption).foregroundStyle(.secondary)
-                            }.padding(.horizontal, 9).padding(.vertical, 7)
-                                .background(store.navigation == .course(course.id) ? theme.selection : .clear, in: RoundedRectangle(cornerRadius: 7))
-                                .overlay {
-                                    if store.state.showCourseBorders {
-                                        RoundedRectangle(cornerRadius: 7).strokeBorder(Color(hex: course.colorHex).opacity(0.6), lineWidth: 1)
-                                    }
-                                }
-                                .contentShape(RoundedRectangle(cornerRadius: 7))
-                        }.buttonStyle(.plain)
-                            .foregroundStyle(.primary)
-                            .fontWeight(store.navigation == .course(course.id) ? .semibold : .regular)
-                            .accessibilityAddTraits(store.navigation == .course(course.id) ? .isSelected : [])
+                        CourseSidebarRow(course: course,
+                                         count: store.state.materials.filter { $0.courseID == course.id }.count,
+                                         isSelected: store.navigation == .course(course.id),
+                                         showBorders: store.state.showCourseBorders,
+                                         onSelect: { store.navigate(to: .course(course.id)) },
+                                         onEdit: {
+                                             guard store.beforeLeavingMaterial?() != false else { return }
+                                             store.courseToEdit = course; store.showingCourseEditor = true
+                                         })
                             .contextMenu {
                                 Button("编辑课程…") { store.courseToEdit = course; store.showingCourseEditor = true }
                                 Button(course.isArchived ? "恢复课程" : "归档课程") { store.perform { try store.repository.archiveCourse(id: course.id, archived: !course.isArchived) } }
                             }
                     }
-                    if store.sidebarCourses.isEmpty { Text("添加课程，开始整理资料").font(.caption).foregroundStyle(.secondary).padding(.vertical, 4) }
-                } header: {
-                    HStack {
-                        Text("课程")
-                        Spacer()
-                        Button { store.courseToEdit = nil; store.showingCourseEditor = true } label: { Image(systemName: "plus") }.buttonStyle(.plain).help("新建课程 · ⌘N")
+                    if store.sidebarCourses.isEmpty {
+                        Text("添加课程，开始整理资料").font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
                     }
-                }
-                Section { navRow("设置", "gearshape", .settings) }
-            }.listStyle(.sidebar)
-                .focusable().focusEffectDisabled()
-                .onKeyPress(.downArrow) { moveSidebar(1); return .handled }
-                .onKeyPress(.upArrow) { moveSidebar(-1); return .handled }
+                }.padding(.horizontal, 14).padding(.bottom, 12)
+            }.scrollIndicators(.hidden).frame(maxHeight: .infinity)
+            Divider().padding(.horizontal, 20)
+            navRow("设置", "gearshape", .settings).padding(.horizontal, 14).padding(.vertical, 12)
         }
+        .focusable().focusEffectDisabled()
+        .onKeyPress(.downArrow) { moveSidebar(1); return .handled }
+        .onKeyPress(.upArrow) { moveSidebar(-1); return .handled }
     }
     private func navRow(_ title: String, _ symbol: String, _ selection: SidebarSelection, count: Int? = nil) -> some View {
-        Button { store.navigate(to: selection) } label: {
-            HStack {
-                Label(title, systemImage: symbol)
-                Spacer()
-                if let count, count > 0 { Text("\(count)").font(.caption).foregroundStyle(.secondary) }
-            }.padding(.horizontal, 9).padding(.vertical, 7)
-                .background(store.navigation == selection ? theme.selection : .clear, in: RoundedRectangle(cornerRadius: 7))
-                .contentShape(RoundedRectangle(cornerRadius: 7))
-        }.buttonStyle(.plain)
-            .foregroundStyle(.primary)
-            .fontWeight(store.navigation == selection ? .semibold : .regular)
-            .accessibilityAddTraits(store.navigation == selection ? .isSelected : [])
+        SidebarDestinationButton(title: title, symbol: symbol, selected: store.navigation == selection, count: count) {
+            store.navigate(to: selection)
+        }
+    }
+
+    private func libraryShortcut(_ title: String, _ symbol: String, _ selection: SidebarSelection, hint: String) -> some View {
+        LibraryShortcut(title: title, symbol: symbol, selected: store.navigation == selection, hint: hint) {
+            store.navigate(to: selection)
+        }
     }
 
     private func moveSidebar(_ offset: Int) {

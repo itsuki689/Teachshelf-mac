@@ -6,10 +6,12 @@ import TeachshelfCore
 struct LibraryWorkspace: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.appTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("libraryPresentation") private var presentation = "list"
     @ViewState private var dropTarget = false
     @ViewState private var showInspector = true
     private var items: [MaterialRecord] { store.visibleMaterials }
+    private var inspectorVisible: Bool { showInspector && store.selectedMaterial != nil }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,27 +23,39 @@ struct LibraryWorkspace: View {
                         Label("\(tasks.count) 个未完成待办", systemImage: "checklist").font(.caption.weight(.medium)).foregroundStyle(.primary)
                         Text(tasks.prefix(2).map(\.title).joined(separator: "  ·  ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         Spacer()
-                        Button("查看待办") { store.navigate(to: .tasks) }.buttonStyle(.link).font(.caption)
+                        Button("查看待办") { store.navigate(to: .tasks) }.buttonStyle(.plain).foregroundStyle(theme.ink).font(.caption)
                     }.padding(.horizontal, 24).padding(.vertical, 10).background(theme.ink.opacity(0.06))
                 }
             }
             Divider()
-            HSplitView {
-                Group {
-                    if items.isEmpty {
+            GeometryReader { geometry in
+                ZStack(alignment: .trailing) {
+                    Group {
+                        if items.isEmpty {
+                            VStack(spacing: 0) {
+                                EmptyStateView(symbol: store.state.materials.isEmpty ? "books.vertical" : "magnifyingglass", title: store.state.materials.isEmpty ? "让知识住进你的书架" : "没有匹配的资料", detail: store.state.materials.isEmpty ? "导入课件、教材和笔记，或将文件拖到这里。所有资料都留在本机。" : "尝试其他关键词，或清除类别与格式筛选。")
+                                Button(store.state.materials.isEmpty ? "导入第一份资料" : "清除筛选") {
+                                    if store.state.materials.isEmpty { store.chooseImport() }
+                                    else { store.search = ""; store.categoryFilter = "全部类别"; store.formatFilter = "全部格式" }
+                                }.appPrimaryButton().padding(.bottom, 100)
+                            }
+                        } else if presentation == "covers" { coverGrid }
+                        else { materialTable }
+                    }.frame(width: geometry.size.width, height: geometry.size.height)
+                    if inspectorVisible, let material = store.selectedMaterial {
                         VStack(spacing: 0) {
-                            EmptyStateView(symbol: store.state.materials.isEmpty ? "books.vertical" : "magnifyingglass", title: store.state.materials.isEmpty ? "让知识住进你的书架" : "没有匹配的资料", detail: store.state.materials.isEmpty ? "导入课件、教材和笔记，或将文件拖到这里。所有资料都留在本机。" : "尝试其他关键词，或清除类别与格式筛选。")
-                            Button(store.state.materials.isEmpty ? "导入第一份资料" : "清除筛选") {
-                                if store.state.materials.isEmpty { store.chooseImport() }
-                                else { store.search = ""; store.categoryFilter = "全部类别"; store.formatFilter = "全部格式" }
-                            }.appPrimaryButton().padding(.bottom, 100)
+                            MaterialInspector(material: material).id(material.id)
                         }
-                    } else if presentation == "covers" { coverGrid }
-                    else { materialTable }
-                }.frame(minWidth: 400, maxWidth: .infinity, maxHeight: .infinity)
-                if showInspector, let material = store.selectedMaterial {
-                    MaterialInspector(material: material).id(material.id).frame(minWidth: 280, idealWidth: 310, maxWidth: 360)
+                        .frame(width: min(320, geometry.size.width * 0.44), height: geometry.size.height)
+                        .background(Color(nsColor: .windowBackgroundColor))
+                        .overlay(alignment: .leading) { Rectangle().fill(.quaternary).frame(width: 1) }
+                        .shadow(color: .black.opacity(theme.isDark ? 0.22 : 0.08), radius: 12, x: -4, y: 0)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
                 }
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .clipped()
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: inspectorVisible)
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
@@ -81,7 +95,11 @@ struct LibraryWorkspace: View {
                     Image(systemName: "list.bullet").tag("list")
                     Image(systemName: "square.grid.2x2").tag("covers")
                 }.labelsHidden().pickerStyle(.segmented).tint(theme.controlAccent).frame(width: 82).help("列表 / 封面")
-                Button { showInspector.toggle() } label: { Image(systemName: "sidebar.right") }.buttonStyle(.borderless).help("资料信息")
+                Button {
+                    guard store.beforeLeavingMaterial?() != false else { return }
+                    showInspector.toggle()
+                } label: { Image(systemName: "sidebar.right") }.buttonStyle(.borderless).help("资料信息")
+                    .disabled(store.selectedMaterial == nil)
             }
             HStack(spacing: 10) {
                 HStack(spacing: 7) {
@@ -103,55 +121,38 @@ struct LibraryWorkspace: View {
     }
 
     private var materialTable: some View {
-        Table(items, selection: Binding(get: { store.selectedMaterialIDs }, set: { store.selectMaterials($0) })) {
-            TableColumn("名称") { material in
-                HStack(spacing: 10) {
-                    FileGlyph(material: material, tint: store.courseColor(material.courseID)).frame(width: 32, height: 36)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(material.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                        Text(store.courseName(material.courseID)).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                }.padding(.vertical, 5)
-            }.width(min: 200, ideal: 330)
-            TableColumn("类别", value: \.category).width(min: 70, ideal: 85, max: 130)
-            TableColumn("大小") { Text($0.sizeLabel).foregroundStyle(.secondary) }.width(80)
-            TableColumn("添加日期") { Text($0.addedAt, format: .dateTime.year().month().day()).foregroundStyle(.secondary) }.width(100)
-            TableColumn("收藏") { material in
-                Button { store.favorite(material) } label: { Image(systemName: material.isFavorite ? "star.fill" : "star").foregroundStyle(material.isFavorite ? Color.orange : Color.secondary.opacity(0.55)) }.buttonStyle(.plain).help("收藏 / 取消收藏")
-            }.width(40)
-        }
-        .contextMenu(forSelectionType: UUID.self) { ids in
-            if let material = store.state.materials.first(where: { ids.contains($0.id) }) { materialMenu(material, ids: ids) }
-        } primaryAction: { ids in if let material = store.state.materials.first(where: { ids.contains($0.id) }) { store.openMaterial(material) } }
-        .onDeleteCommand { if !store.selectedMaterialIDs.isEmpty { store.removeMaterials(store.selectedMaterialIDs) } }
-        .onKeyPress(.space) {
-            guard let material = store.selectedMaterial else { return .ignored }
-            QuickLookController.shared.show(try? store.repository.resolveURL(material)); return .handled
-        }
+        MaterialListView(items: items,
+                         selection: Binding(get: { store.selectedMaterialIDs }, set: { store.selectMaterials($0) }),
+                         theme: theme,
+                         courseName: { store.courseName($0) }, courseColor: { store.courseColor($0) },
+                         resolveURL: { try? store.repository.resolveURL($0) },
+                         onOpen: { store.openMaterial($0) },
+                         onQuickLook: { QuickLookController.shared.show(try? store.repository.resolveURL($0)) },
+                         onReveal: { if let url = try? store.repository.resolveURL($0) { store.revealURL(url) } },
+                         onFavorite: { store.favorite($0) }, onRemove: { store.removeMaterials($0) })
     }
 
     private var coverGrid: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 155, maximum: 200), spacing: 24)], alignment: .leading, spacing: 26) {
                 ForEach(items) { material in
-                    VStack(alignment: .leading, spacing: 9) {
-                        CoverThumbnail(material: material, url: try? store.repository.resolveURL(material), color: store.courseColor(material.courseID))
-                            .frame(height: 205).shadow(color: .black.opacity(0.12), radius: 7, x: 0, y: 4)
-                        Text(material.title).font(.system(size: 13, weight: .medium)).lineLimit(2).frame(height: 34, alignment: .topLeading)
-                        HStack {
-                            Text(store.courseName(material.courseID)).lineLimit(1)
-                            Spacer(minLength: 0)
-                            if material.isFavorite { Image(systemName: "star.fill").foregroundStyle(.orange) }
-                        }.font(.system(size: 10)).foregroundStyle(.secondary)
-                    }.padding(10).background(store.selectedMaterialIDs.contains(material.id) ? theme.selection : .clear, in: RoundedRectangle(cornerRadius: 9))
+                    MaterialCoverCard(material: material, url: try? store.repository.resolveURL(material),
+                                      courseName: store.courseName(material.courseID), courseColor: store.courseColor(material.courseID),
+                                      selected: store.selectedMaterialIDs.contains(material.id))
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) { store.openMaterial(material) }
                         .onTapGesture { store.selectMaterials([material.id]) }
+                        .accessibilityAction { store.selectMaterials([material.id]) }
                         .contextMenu { materialMenu(material, ids: [material.id]) }
                         .onDrag { NSItemProvider(contentsOf: (try? store.repository.resolveURL(material)) ?? URL(fileURLWithPath: material.sourcePath)) ?? NSItemProvider() }
                 }
             }.padding(24)
         }.background(Color(nsColor: .underPageBackgroundColor).opacity(0.35))
+            .focusable().focusEffectDisabled()
+            .onKeyPress(.space) {
+                guard let material = store.selectedMaterial else { return .ignored }
+                QuickLookController.shared.show(try? store.repository.resolveURL(material)); return .handled
+            }
     }
     @ViewBuilder private func materialMenu(_ material: MaterialRecord, ids: Set<UUID>) -> some View {
         Button("打开资料") { store.openMaterial(material) }

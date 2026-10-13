@@ -30,7 +30,7 @@ import TeachshelfCore
         for size in [NSSize(width: 1260, height: 800), NSSize(width: 1020, height: 680)] {
             window.setContentSize(size)
             let originalFrame = window.frame
-            for page in [SidebarSelection.all, .calendar, .tasks, .homework, .settings, .all] {
+            for page in [SidebarSelection.all, .calendar, .tasks, .homework, .settings, .course(course.id), .all] {
                 store.navigate(to: page)
                 RunLoop.main.run(until: Date().addingTimeInterval(0.05))
                 host.layoutSubtreeIfNeeded()
@@ -44,6 +44,18 @@ import TeachshelfCore
                         let rect = pane.convert(pane.bounds, to: host)
                         #expect(rect.maxX <= host.bounds.maxX + 1, "\(page) at \(size): pane overflows the window: \(rect)")
                     }
+                }
+                if page.isLibrary, let materialID = store.visibleMaterials.first?.id {
+                    store.selectMaterials([materialID])
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+                    host.layoutSubtreeIfNeeded()
+                    #expect(window.frame == originalFrame, "Opening material details must not resize \(page) at \(size)")
+                    #expect(abs(host.fittingSize.width - 1020) < 1)
+                    #expect(abs(host.fittingSize.height - 680) < 1)
+                    store.selectMaterials([])
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+                    host.layoutSubtreeIfNeeded()
+                    #expect(window.frame == originalFrame, "Closing material details must not resize \(page) at \(size)")
                 }
             }
         }
