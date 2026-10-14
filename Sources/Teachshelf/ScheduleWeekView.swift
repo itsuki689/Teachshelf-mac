@@ -288,10 +288,7 @@ struct ScheduleWeekView: View {
             Spacer(minLength: 0)
         }
         .padding(inset).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(color.opacity(theme.isDark ? 0.18 : 0.10), in: RoundedRectangle(cornerRadius: 5))
-        .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 2).padding(.vertical, 3) }
-        .overlay { RoundedRectangle(cornerRadius: 5).strokeBorder(color.opacity(0.25), lineWidth: 0.7) }
-        .clipShape(RoundedRectangle(cornerRadius: 5)).contentShape(RoundedRectangle(cornerRadius: 5))
+        .modifier(WeekCardSurface(color: color, isCourse: event.planOccurrence == nil, isDark: theme.isDark))
     }
 
     @ViewBuilder private func virtualCourses(_ term: TimetableTerm, metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> some View {
@@ -310,7 +307,8 @@ struct ScheduleWeekView: View {
                         } label: {
                             Text(placement.meeting.title).font(.system(size: 10, weight: .semibold)).lineLimit(2)
                                 .padding(4).frame(width: size.width, height: size.height, alignment: .topLeading)
-                                .background(theme.selection, in: RoundedRectangle(cornerRadius: 5))
+                                .modifier(WeekCardSurface(color: eventColorForCourse(placement.meeting.courseID),
+                                                          isCourse: true, isDark: theme.isDark))
                         }
                         .buttonStyle(.plain)
                         .offset(x: metrics.labelWidth + CGFloat(weekday - 1) * metrics.columnWidth + CGFloat(placement.lane) * width + 2, y: vertical.minY)
@@ -418,8 +416,9 @@ struct ScheduleWeekView: View {
     @ViewBuilder private func targetPreview(_ metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> some View {
         if let current = drag, let target = current.target {
             let rect = targetRect(current.event, target: target, metrics: metrics, timeline: timeline)
-            RoundedRectangle(cornerRadius: 5).fill(theme.ink.opacity(0.10))
-                .overlay { RoundedRectangle(cornerRadius: 5).strokeBorder(theme.ink, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])) }
+            let shape = RoundedRectangle(cornerRadius: current.event.planOccurrence == nil ? 0 : 5)
+            shape.fill(theme.ink.opacity(0.10))
+                .overlay { shape.strokeBorder(theme.ink, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])) }
                 .overlay(alignment: .topLeading) {
                     Text(target.startSection.map { "第 \($0) 节" } ?? (current.event.isDeadline ? "截止" : TimetableCalendar.formatted(target.date, template: "HHmm")))
                         .font(.system(size: 9, weight: .semibold)).padding(3)
@@ -452,7 +451,6 @@ struct ScheduleWeekView: View {
     @ViewBuilder private var dragPreview: some View {
         if let drag {
             cardContent(drag.event, size: drag.sourceRect.size)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 5))
                 .frame(width: drag.sourceRect.width, height: drag.sourceRect.height)
                 .scaleEffect(reduceMotion ? 1 : 1.025)
                 .shadow(color: .black.opacity(reduceMotion ? 0 : 0.20), radius: 12, y: 5)
@@ -525,7 +523,8 @@ struct ScheduleWeekView: View {
     private func timedEvents(on day: Date) -> [PlanDisplayEvent] {
         ScheduleData.planEvents(on: day, in: store.state, selection: selection).filter { !$0.isDeadline && !$0.isAllDay }
     }
-    private func eventColor(_ event: PlanDisplayEvent) -> Color { event.courseID.map { store.courseColor($0) } ?? theme.ink }
+    private func eventColor(_ event: PlanDisplayEvent) -> Color { eventColorForCourse(event.courseID) }
+    private func eventColorForCourse(_ id: UUID?) -> Color { id.map { store.courseColor($0) } ?? theme.ink }
     private func open(_ event: PlanDisplayEvent) {
         guard drag == nil, Date().timeIntervalSince(lastDragEnded) > 0.15 else { return }
         switch event.source {
@@ -535,6 +534,28 @@ struct ScheduleWeekView: View {
             onMeeting(ScheduleMeetingContext(term: term, meeting: course.meeting, date: course.day,
                 selectedDate: selection.selectedDate, originalDate: course.originalDate))
         }
+    }
+}
+
+private struct WeekCardSurface: ViewModifier {
+    let color: Color
+    let isCourse: Bool
+    let isDark: Bool
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: isCourse ? 0 : 5)
+        content
+            .background {
+                // The solid base masks grid lines and selected-day shading.
+                shape.fill(Color(nsColor: .textBackgroundColor))
+                    .overlay { shape.fill(color.opacity(isDark ? 0.26 : 0.16)) }
+            }
+            .overlay(alignment: .leading) {
+                Rectangle().fill(color).frame(width: 2)
+                    .padding(.vertical, isCourse ? 0 : 3)
+            }
+            .overlay { shape.strokeBorder(color.opacity(0.22), lineWidth: 0.7) }
+            .clipShape(shape).contentShape(shape)
     }
 }
 

@@ -10,6 +10,7 @@ struct PlanEventRow: View {
 
     var body: some View {
         let color = ScheduleEventColor.course(event.courseID, in: store.state, theme: theme)
+        let shape = RoundedRectangle(cornerRadius: event.planOccurrence == nil ? 0 : 10)
         HStack(alignment: .top, spacing: compact ? 8 : 12) {
             if let occurrence = event.planOccurrence, event.completionRequired {
                 Button {
@@ -43,7 +44,12 @@ struct PlanEventRow: View {
             }.buttonStyle(.plain).accessibilityLabel("查看\(event.isDeadline ? "DDL" : "计划")：\(event.title)，\(event.timeLabel)")
         }
         .padding(compact ? 0 : 14)
-        .background(compact ? Color.clear : color.opacity(theme.isDark ? 0.12 : 0.055), in: RoundedRectangle(cornerRadius: 10))
+        .background {
+            if !compact {
+                shape.fill(Color(nsColor: .textBackgroundColor))
+                    .overlay { shape.fill(color.opacity(theme.isDark ? 0.22 : 0.12)) }
+            }
+        }
         .opacity(event.isCompleted ? 0.65 : 1)
     }
 }
