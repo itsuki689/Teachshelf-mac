@@ -8,6 +8,8 @@ struct ScheduleWeekMetrics {
     let headerHeight: CGFloat
     let allDayHeight: CGFloat
     let labelWidth: CGFloat
+    let timeColumnWidth: CGFloat
+    let sectionColumnWidth: CGFloat
     let columnWidth: CGFloat
     let rowHeight: CGFloat
 
@@ -18,7 +20,9 @@ struct ScheduleWeekMetrics {
         verticalInset = min(8, height / 2)
         let contentWidth = max(0, width - 2 * horizontalInset)
         let contentHeight = max(0, height - 2 * verticalInset)
-        labelWidth = min(width < 620 ? 58 : 64, contentWidth)
+        labelWidth = min(width < 620 ? 100 : 112, contentWidth)
+        timeColumnWidth = min(width < 620 ? 48 : 54, labelWidth)
+        sectionColumnWidth = max(0, labelWidth - timeColumnWidth)
         columnWidth = max(0, contentWidth - labelWidth) / 7
         headerHeight = min(44, contentHeight)
         allDayHeight = min(42, max(0, contentHeight - headerHeight))

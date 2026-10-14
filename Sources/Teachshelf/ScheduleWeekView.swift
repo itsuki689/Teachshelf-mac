@@ -72,8 +72,11 @@ struct ScheduleWeekView: View {
 
     private func weekdayHeader(_ metrics: ScheduleWeekMetrics) -> some View {
         HStack(spacing: 0) {
-            Text("时间").font(.caption).foregroundStyle(.secondary)
-                .frame(width: metrics.labelWidth, height: metrics.headerHeight)
+            Text("时间").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+                .frame(width: metrics.timeColumnWidth, height: metrics.headerHeight)
+                .overlay(alignment: .trailing) { Rectangle().fill(Color.primary.opacity(0.065)).frame(width: 0.7) }
+            Text("节次").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+                .frame(width: metrics.sectionColumnWidth, height: metrics.headerHeight)
             ForEach(0..<7, id: \.self) { index in
                 let date = dayDate(index)
                 let selected = date.map { calendar.isDate($0, inSameDayAs: selection.selectedDate) } ?? false
@@ -82,13 +85,13 @@ struct ScheduleWeekView: View {
                 } label: {
                     VStack(spacing: 4) {
                         HStack(spacing: 4) {
-                            Text(weekdays[index]).font(.system(size: 12, weight: .semibold))
+                            Text(weekdays[index]).font(.system(size: 13, weight: .semibold))
                             if date.map(calendar.isDateInToday) == true {
                                 Circle().fill(theme.ink).frame(width: 4, height: 4)
                             }
                         }
                         if let date {
-                            Text(TimetableLayout.dateLabel(date)).font(.system(size: 10)).foregroundStyle(.secondary)
+                            Text(TimetableLayout.dateLabel(date)).font(.system(size: 11)).foregroundStyle(.secondary)
                         }
                     }
                     .frame(width: metrics.columnWidth, height: metrics.headerHeight)
@@ -107,7 +110,7 @@ struct ScheduleWeekView: View {
 
     private func allDayBand(_ metrics: ScheduleWeekMetrics) -> some View {
         HStack(spacing: 0) {
-            Text("全天\n截止").font(.system(size: 9)).foregroundStyle(.secondary)
+            Text("全天\n截止").font(.system(size: 11)).foregroundStyle(.secondary)
                 .frame(width: metrics.labelWidth, height: metrics.allDayHeight)
             ForEach(0..<7, id: \.self) { index in
                 let events = dayDate(index).map { bandEvents(on: $0) } ?? []
@@ -218,34 +221,37 @@ struct ScheduleWeekView: View {
                 if sectionTimes.contains(where: { $0.section == time.section }) || term == nil {
                     clockTick(time.startMinute, y: top, metrics: metrics)
                 }
-                Text("第 \(time.section) 节").font(.system(size: 9, weight: .medium))
+                Text("第 \(time.section) 节").font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .frame(width: max(0, metrics.labelWidth - 8), height: max(1, bottom - top))
-                    .offset(y: top)
+                    .frame(width: metrics.sectionColumnWidth, height: max(1, bottom - top))
+                    .offset(x: metrics.timeColumnWidth, y: top)
             }
-            Text("早间").font(.system(size: 8)).foregroundStyle(.tertiary)
-                .frame(width: max(0, metrics.labelWidth - 8), height: timeline.y(for: Double(timeline.times.first?.startMinute ?? 480)))
+            Text("早间").font(.system(size: 11)).foregroundStyle(.secondary)
+                .frame(width: metrics.sectionColumnWidth, height: timeline.y(for: Double(timeline.times.first?.startMinute ?? 480)))
+                .offset(x: metrics.timeColumnWidth)
             if let lunch = timeline.lunchBreak {
                 let top = timeline.y(for: Double(lunch.lowerBound))
                 let bottom = timeline.y(for: Double(lunch.upperBound))
                 if sectionTimes.contains(where: { $0.endMinute == lunch.lowerBound }) || term == nil {
                     clockTick(lunch.lowerBound, y: top, metrics: metrics)
                 }
-                Text("午休").font(.system(size: 9)).foregroundStyle(.secondary)
-                    .frame(width: max(0, metrics.labelWidth - 8), height: bottom - top)
-                    .offset(y: top)
+                Text("午休").font(.system(size: 12)).foregroundStyle(.secondary)
+                    .frame(width: metrics.sectionColumnWidth, height: bottom - top)
+                    .offset(x: metrics.timeColumnWidth, y: top)
             }
             if let end = timeline.times.last?.endMinute {
                 let nightTop = timeline.y(for: Double(end))
                 if sectionTimes.contains(where: { $0.endMinute == end }) || term == nil {
                     clockTick(end, y: nightTop, metrics: metrics)
                 }
-                Text("夜间").font(.system(size: 8)).foregroundStyle(.tertiary)
+                Text("夜间").font(.system(size: 11)).foregroundStyle(.secondary)
                     .padding(.bottom, 2)
-                    .frame(width: max(0, metrics.labelWidth - 8), height: max(1, timeline.height - nightTop), alignment: .bottom)
-                    .offset(y: nightTop)
+                    .frame(width: metrics.sectionColumnWidth, height: max(1, timeline.height - nightTop), alignment: .bottom)
+                    .offset(x: metrics.timeColumnWidth, y: nightTop)
             }
             Path { path in
+                path.move(to: CGPoint(x: metrics.timeColumnWidth, y: 0))
+                path.addLine(to: CGPoint(x: metrics.timeColumnWidth, y: timeline.height))
                 for index in 0...7 {
                     let x = metrics.labelWidth + CGFloat(index) * metrics.columnWidth
                     path.move(to: CGPoint(x: x, y: 0)); path.addLine(to: CGPoint(x: x, y: timeline.height))
@@ -256,11 +262,11 @@ struct ScheduleWeekView: View {
     }
 
     private func clockTick(_ minute: Int, y: CGFloat, metrics: ScheduleWeekMetrics) -> some View {
-        Text(TimetableLayout.clock(minute)).font(.system(size: 8)).monospacedDigit()
+        Text(TimetableLayout.clock(minute)).font(.system(size: 12, weight: .medium)).monospacedDigit()
             .foregroundStyle(.secondary)
-            .frame(width: max(0, metrics.labelWidth - 8), height: 10)
+            .frame(width: max(0, metrics.timeColumnWidth - 8), height: 16)
             .background(Color(nsColor: .textBackgroundColor))
-            .offset(y: y - 5)
+            .offset(x: 4, y: y - 8)
     }
 
     private func timedCard(_ event: PlanDisplayEvent, day: Date, index: Int, lane: ScheduleWeekLane,
@@ -288,12 +294,14 @@ struct ScheduleWeekView: View {
     private func cardContent(_ event: PlanDisplayEvent, size: CGSize) -> some View {
         let color = eventColor(event)
         let inset: CGFloat = size.height < 24 ? 2 : 5
+        let showsDetails = size.height >= 48
+        let titleLines = max(1, min(4, Int((size.height - inset * 2 - (showsDetails ? 16 : 0)) / 16)))
         return VStack(alignment: .leading, spacing: 2) {
-            Text(event.title).font(.system(size: size.width < 60 ? 9 : 11, weight: .semibold))
-                .lineLimit(size.height > 42 ? 2 : 1).strikethrough(event.isCompleted)
-            if size.height > 34 {
+            Text(event.title).font(.system(size: size.width < 46 ? 11 : 13, weight: .semibold))
+                .lineLimit(titleLines).strikethrough(event.isCompleted)
+            if showsDetails {
                 Text(event.location.isEmpty ? event.timeLabel : event.location)
-                    .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
@@ -315,7 +323,8 @@ struct ScheduleWeekView: View {
                         Button {
                             onMeeting(ScheduleMeetingContext(term: term, meeting: placement.meeting, date: nil, selectedDate: selection.selectedDate))
                         } label: {
-                            Text(placement.meeting.title).font(.system(size: 10, weight: .semibold)).lineLimit(2)
+                            Text(placement.meeting.title).font(.system(size: rect.width < 46 ? 11 : 13, weight: .semibold))
+                                .lineLimit(max(1, min(4, Int((rect.height - 8) / 16))))
                                 .padding(4).frame(width: rect.width, height: rect.height, alignment: .topLeading)
                                 .modifier(WeekCardSurface(color: eventColorForCourse(placement.meeting.courseID),
                                                           isCourse: true, isDark: theme.isDark))
