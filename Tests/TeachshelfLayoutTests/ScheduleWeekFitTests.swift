@@ -52,14 +52,14 @@ struct ScheduleWeekFitTests {
         }
     }
 
-    @Test func courseEdgesFillTheExactDayAndConflictLaneBoundaries() {
+    @Test func allPlanEdgesFillTheExactDayAndConflictLaneBoundaries() {
         for viewport in [CGSize(width: 552, height: 570), CGSize(width: 752, height: 690)] {
             let metrics = ScheduleWeekMetrics(viewport: viewport, sectionCount: 11)
             for day in 0..<7 {
                 for count in 1...3 {
                     for lane in 0..<count {
                         let rect = metrics.eventRect(dayIndex: day, lane: lane, laneCount: count,
-                                                     top: 100, height: 60, isCourse: true)
+                                                     top: 100, height: 60)
                         let width = metrics.columnWidth / CGFloat(count)
                         #expect(abs(rect.minX - (metrics.labelWidth + CGFloat(day) * metrics.columnWidth + CGFloat(lane) * width)) < 0.001)
                         #expect(abs(rect.maxX - (metrics.labelWidth + CGFloat(day) * metrics.columnWidth + CGFloat(lane + 1) * width)) < 0.001)

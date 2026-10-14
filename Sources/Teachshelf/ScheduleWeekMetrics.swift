@@ -30,10 +30,9 @@ struct ScheduleWeekMetrics {
     }
 
     func eventRect(dayIndex: Int, lane: Int = 0, laneCount: Int = 1,
-                   top: CGFloat, height: CGFloat, isCourse: Bool) -> CGRect {
+                   top: CGFloat, height: CGFloat) -> CGRect {
         let laneWidth = columnWidth / CGFloat(max(1, laneCount))
-        let inset: CGFloat = isCourse ? 0 : 2
-        return CGRect(x: labelWidth + CGFloat(dayIndex) * columnWidth + CGFloat(lane) * laneWidth + inset,
-                      y: top, width: max(0, laneWidth - 2 * inset), height: height)
+        return CGRect(x: labelWidth + CGFloat(dayIndex) * columnWidth + CGFloat(lane) * laneWidth,
+                      y: top, width: laneWidth, height: height)
     }
 }

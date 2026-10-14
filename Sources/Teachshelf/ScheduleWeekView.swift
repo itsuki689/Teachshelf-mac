@@ -33,7 +33,9 @@ struct ScheduleWeekView: View {
             let timeline = ScheduleWeekTimeline(height: metrics.rowHeight * CGFloat(sections),
                                                 sectionCount: sections, times: sectionTimes)
             VStack(spacing: 0) {
-                weekdayHeader(metrics)
+                TimelineView(.periodic(from: Date(), by: 60)) { context in
+                    weekdayHeader(metrics, now: context.date)
+                }
                 ZStack(alignment: .topLeading) {
                     VStack(spacing: 0) {
                         allDayBand(metrics)
@@ -70,7 +72,7 @@ struct ScheduleWeekView: View {
         }
     }
 
-    private func weekdayHeader(_ metrics: ScheduleWeekMetrics) -> some View {
+    private func weekdayHeader(_ metrics: ScheduleWeekMetrics, now: Date) -> some View {
         HStack(spacing: 0) {
             Text("时间").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
                 .frame(width: metrics.timeColumnWidth, height: metrics.headerHeight)
@@ -80,30 +82,33 @@ struct ScheduleWeekView: View {
             ForEach(0..<7, id: \.self) { index in
                 let date = dayDate(index)
                 let selected = date.map { calendar.isDate($0, inSameDayAs: selection.selectedDate) } ?? false
+                let isToday = date.map { calendar.isDate($0, inSameDayAs: now) } ?? false
                 Button {
                     if let date { selection.setDate(date) }
                 } label: {
                     VStack(spacing: 4) {
                         HStack(spacing: 4) {
                             Text(weekdays[index]).font(.system(size: 13, weight: .semibold))
-                            if date.map(calendar.isDateInToday) == true {
-                                Circle().fill(theme.ink).frame(width: 4, height: 4)
+                            if isToday {
+                                Circle().fill(Color.white).frame(width: 4, height: 4)
                             }
                         }
                         if let date {
-                            Text(TimetableLayout.dateLabel(date)).font(.system(size: 11)).foregroundStyle(.secondary)
+                            Text(TimetableLayout.dateLabel(date)).font(.system(size: 11))
+                                .foregroundStyle(isToday ? Color.white.opacity(0.9) : Color.secondary)
                         }
                     }
                     .frame(width: metrics.columnWidth, height: metrics.headerHeight)
+                    .foregroundStyle(isToday ? Color.white : Color.primary)
                     .contentShape(Rectangle())
-                    .background(selected ? theme.selection : .clear)
+                    .background(isToday ? theme.controlAccent : (selected ? theme.selection : .clear))
                     .overlay(alignment: .bottom) {
-                        if selected { Rectangle().fill(theme.ink).frame(height: 2) }
+                        if selected && !isToday { Rectangle().fill(theme.ink).frame(height: 2) }
                     }
                 }
                 .buttonStyle(.plain).disabled(date == nil)
                 .accessibilityLabel(date.map { TimetableCalendar.formatted($0, template: "MMM d EEEE") } ?? weekdays[index])
-                .accessibilityValue(selected ? "已选择" : "")
+                .accessibilityValue([isToday ? "今天" : nil, selected ? "已选择" : nil].compactMap { $0 }.joined(separator: "，"))
             }
         }
     }
@@ -128,7 +133,7 @@ struct ScheduleWeekView: View {
                     }
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 3).padding(.vertical, 2)
+                .padding(.vertical, 2)
                 .frame(width: metrics.columnWidth, height: metrics.allDayHeight, alignment: .topLeading)
                 .background(Color.primary.opacity(0.018))
                 .overlay(alignment: .trailing) { Rectangle().fill(Color.primary.opacity(0.065)).frame(width: 1) }
@@ -138,8 +143,7 @@ struct ScheduleWeekView: View {
     }
 
     private func bandCard(_ event: PlanDisplayEvent, index: Int, row: Int, metrics: ScheduleWeekMetrics) -> some View {
-        let rect = CGRect(x: metrics.labelWidth + CGFloat(index) * metrics.columnWidth + 3,
-                          y: CGFloat(row) * 14 + 2, width: max(1, metrics.columnWidth - 6), height: 13)
+        let rect = metrics.eventRect(dayIndex: index, top: CGFloat(row) * 14 + 2, height: 13)
         let card = Button { open(event) } label: {
             HStack(spacing: 2) {
                 if event.isDeadline { Text("DDL").font(.system(size: 7, weight: .bold)) }
@@ -150,7 +154,8 @@ struct ScheduleWeekView: View {
             .padding(.horizontal, 3).frame(height: 13)
             .background(eventColor(event).opacity(0.09), in: RoundedRectangle(cornerRadius: 3))
         }
-        .buttonStyle(.plain).opacity(drag?.event.id == event.id ? 0.2 : 1)
+        .buttonStyle(.plain).frame(width: rect.width, height: rect.height)
+        .opacity(drag?.event.id == event.id ? 0.2 : 1)
         .help("\(event.isDeadline ? "截止 · " : "")\(event.title) · \(event.timeLabel)")
         .accessibilityLabel("\(event.isDeadline ? "截止 " : "全天 ")\(event.title)，\(event.timeLabel)")
         return Group {
@@ -273,8 +278,7 @@ struct ScheduleWeekView: View {
                            metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> some View {
         let vertical = timeRect(event, day: day, timeline: timeline)
         let rect = metrics.eventRect(dayIndex: index, lane: lane.lane, laneCount: lane.laneCount,
-                                     top: vertical.minY + metrics.allDayHeight, height: vertical.height,
-                                     isCourse: event.planOccurrence == nil)
+                                     top: vertical.minY + metrics.allDayHeight, height: vertical.height)
         let card = Button {
             guard drag == nil, Date().timeIntervalSince(lastDragEnded) > 0.15 else { return }
             open(event)
@@ -293,11 +297,12 @@ struct ScheduleWeekView: View {
 
     private func cardContent(_ event: PlanDisplayEvent, size: CGSize) -> some View {
         let color = eventColor(event)
-        let inset: CGFloat = size.height < 24 ? 2 : 5
+        let compact = size.height < 24
+        let verticalInset: CGFloat = compact ? 0 : 5
         let showsDetails = size.height >= 48
-        let titleLines = max(1, min(4, Int((size.height - inset * 2 - (showsDetails ? 16 : 0)) / 16)))
+        let titleLines = max(1, min(4, Int((size.height - verticalInset * 2 - (showsDetails ? 16 : 0)) / 16)))
         return VStack(alignment: .leading, spacing: 2) {
-            Text(event.title).font(.system(size: size.width < 46 ? 11 : 13, weight: .semibold))
+            Text(event.title).font(.system(size: compact ? 10 : (size.width < 46 ? 11 : 13), weight: .semibold))
                 .lineLimit(titleLines).strikethrough(event.isCompleted)
             if showsDetails {
                 Text(event.location.isEmpty ? event.timeLabel : event.location)
@@ -305,7 +310,8 @@ struct ScheduleWeekView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(inset).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 5).padding(.vertical, verticalInset)
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
         .modifier(WeekCardSurface(color: color, isCourse: event.planOccurrence == nil, isDark: theme.isDark))
     }
 
@@ -319,7 +325,7 @@ struct ScheduleWeekView: View {
                 ForEach(TimetableLayout.placements(meetings)) { placement in
                     if let vertical = timeline.sectionRect(start: placement.meeting.startSection, count: placement.meeting.sectionCount) {
                         let rect = metrics.eventRect(dayIndex: weekday - 1, lane: placement.lane, laneCount: placement.laneCount,
-                                                     top: vertical.minY, height: vertical.height, isCourse: true)
+                                                     top: vertical.minY, height: vertical.height)
                         Button {
                             onMeeting(ScheduleMeetingContext(term: term, meeting: placement.meeting, date: nil, selectedDate: selection.selectedDate))
                         } label: {
@@ -450,7 +456,7 @@ struct ScheduleWeekView: View {
 
     private func targetRect(_ event: PlanDisplayEvent, target: WeekPlanDrop,
                             metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> CGRect {
-        let column = metrics.eventRect(dayIndex: target.dayIndex, top: 0, height: 0, isCourse: event.planOccurrence == nil)
+        let column = metrics.eventRect(dayIndex: target.dayIndex, top: 0, height: 0)
         let x = column.minX, width = column.width
         if event.isDeadline || event.isAllDay {
             // This overlay lives inside the time canvas; the actual header is
@@ -525,12 +531,13 @@ struct ScheduleWeekView: View {
 
     @ViewBuilder private func creationPreview(_ metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> some View {
         if let creation {
-            let rect = timeline.intervalRect(start: Double(creation.startMinute), end: Double(creation.endMinute), minimumHeight: 13)
+            let vertical = timeline.intervalRect(start: Double(creation.startMinute), end: Double(creation.endMinute), minimumHeight: 13)
+            let rect = metrics.eventRect(dayIndex: creation.dayIndex, top: vertical.minY, height: vertical.height)
             RoundedRectangle(cornerRadius: 5).fill(theme.selection)
                 .overlay { RoundedRectangle(cornerRadius: 5).strokeBorder(theme.ink, style: StrokeStyle(lineWidth: 1, dash: [3, 3])) }
                 .overlay(alignment: .topLeading) { Text("空").font(.system(size: 11, weight: .medium)).padding(4) }
-                .frame(width: max(1, metrics.columnWidth - 4), height: rect.height)
-                .offset(x: metrics.labelWidth + CGFloat(creation.dayIndex) * metrics.columnWidth + 2, y: rect.minY)
+                .frame(width: rect.width, height: rect.height)
+                .offset(x: rect.minX, y: rect.minY)
         }
     }
 
@@ -569,11 +576,11 @@ private struct WeekCardSurface: ViewModifier {
                 shape.fill(Color(nsColor: .textBackgroundColor))
                     .overlay { shape.fill(color.opacity(isDark ? 0.26 : 0.16)) }
             }
-            .overlay(alignment: .leading) {
-                Rectangle().fill(color).frame(width: 2)
-                    .padding(.vertical, isCourse ? 0 : 3)
-            }
             .overlay { shape.strokeBorder(color.opacity(0.22), lineWidth: 0.7) }
+            .overlay {
+                shape.strokeBorder(color, lineWidth: 2)
+                    .mask(alignment: .leading) { Rectangle().frame(width: isCourse ? 2 : 6) }
+            }
             .clipShape(shape).contentShape(shape)
     }
 }
