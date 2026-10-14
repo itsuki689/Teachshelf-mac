@@ -16,8 +16,7 @@ struct ContentView: View {
                         Group {
                             switch store.navigation {
                             case .tasks: TaskWorkspace()
-                            case .calendar: CalendarWorkspace()
-                            case .timetable: TimetableWorkspace()
+                            case .schedule: ScheduleWorkspace()
                             case .homework: HomeworkWorkspace()
                             case .settings: SettingsWorkspace()
                             default: LibraryWorkspace()
@@ -82,8 +81,7 @@ struct ContentView: View {
                 .accessibilityElement(children: .contain).accessibilityLabel("快捷入口")
 
             VStack(spacing: 3) {
-                navRow("日历", "calendar", .calendar)
-                navRow("课表", "rectangle.split.3x3", .timetable)
+                navRow("日程", "calendar", .schedule)
             }.padding(.horizontal, 14)
             Divider().padding(.horizontal, 20).padding(.vertical, 15)
             HStack {
@@ -138,7 +136,7 @@ struct ContentView: View {
     }
 
     private func moveSidebar(_ offset: Int) {
-        let destinations: [SidebarSelection] = [.all, .favorites, .recent, .unassigned, .homework, .tasks, .calendar, .timetable]
+        let destinations: [SidebarSelection] = [.all, .favorites, .recent, .unassigned, .homework, .tasks, .schedule]
             + store.sidebarCourses.map { .course($0.id) } + [.settings]
         let index = store.navigation.flatMap { destinations.firstIndex(of: $0) } ?? 0
         store.navigate(to: destinations[min(max(index + offset, 0), destinations.count - 1)])

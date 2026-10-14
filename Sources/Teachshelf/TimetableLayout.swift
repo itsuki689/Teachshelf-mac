@@ -10,6 +10,13 @@ struct TimetablePlacement: Identifiable {
 }
 
 enum TimetableLayout {
+    static func sectionCount(in term: TimetableTerm?) -> Int {
+        max(UndergraduateTimetableDefaults.sectionTimes.last?.section ?? 11,
+            max(max(term?.meetings.filter(\.isScheduled).map(\.endSection).max() ?? 0,
+                    term?.reschedules.map(\.meeting.endSection).max() ?? 0),
+                term?.sectionTimes.map(\.section).max() ?? 0))
+    }
+
     static func placements(_ meetings: [TimetableMeeting]) -> [TimetablePlacement] {
         let sorted = meetings.filter(\.isScheduled).sorted {
             if $0.startSection != $1.startSection { return $0.startSection < $1.startSection }

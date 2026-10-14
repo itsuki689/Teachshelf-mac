@@ -3,10 +3,17 @@ import SwiftUI
 import TeachshelfCore
 
 enum SidebarSelection: Hashable {
-    case all, favorites, recent, unassigned, course(UUID), homework, tasks, calendar, timetable, settings
+    case all, favorites, recent, unassigned, course(UUID), homework, tasks, schedule, settings
     var isLibrary: Bool {
         switch self { case .all, .favorites, .recent, .unassigned, .course: return true; default: return false }
     }
+}
+
+private struct TimetableUndo {
+    let root: URL
+    let before: TimetableTerm
+    let after: TimetableTerm?
+    let label: String
 }
 
 @MainActor final class AppStore: ObservableObject {
@@ -31,10 +38,40 @@ enum SidebarSelection: Hashable {
     @Published var showingCourseEditor = false
     @Published private(set) var previewAccentHex: String?
     @Published private(set) var accentPreviewID: UUID?
+    let scheduleSelection = ScheduleSelection()
+    @Published private var timetableUndo: TimetableUndo?
     private let remembersLocation: Bool
     var beforeLeavingMaterial: (() -> Bool)?
 
     var effectiveAccentHex: String { previewAccentHex ?? state.accentColor }
+
+    var canUndoTimetableChange: Bool {
+        guard let undo = timetableUndo, undo.root == repository.root else { return false }
+        return state.timetableTerms.first(where: { $0.id == undo.before.id }) == undo.after
+    }
+    var timetableUndoLabel: String? { canUndoTimetableChange ? timetableUndo?.label : nil }
+
+    @discardableResult
+    func changeTimetable(termID: UUID, label: String, action: (LibraryRepository) throws -> Void) -> Bool {
+        guard !isBusy, let before = state.timetableTerms.first(where: { $0.id == termID }) else { return false }
+        do {
+            try action(repository)
+            let after = repository.state.timetableTerms.first(where: { $0.id == termID })
+            reload()
+            if before != after { timetableUndo = TimetableUndo(root: repository.root, before: before, after: after, label: label) }
+            status = label
+            return true
+        } catch { report(error); return false }
+    }
+
+    func undoTimetableChange() {
+        guard !isBusy, canUndoTimetableChange, let undo = timetableUndo else { return }
+        do {
+            try repository.saveTimetableTerm(undo.before)
+            timetableUndo = nil
+            reload(); status = "已撤销\(undo.label)"
+        } catch { report(error) }
+    }
 
     func beginAccentPreview() -> UUID? {
         guard !isBusy, accentPreviewID == nil else { return nil }
@@ -84,6 +121,7 @@ enum SidebarSelection: Hashable {
         self.state = repository.state
         self.canUndoTaskDeletion = repository.canUndoTaskDeletion
         self.remembersLocation = remembersLocation
+        scheduleSelection.reconcile(state)
     }
 
     static func bootstrap() -> AppStore {
@@ -136,8 +174,7 @@ enum SidebarSelection: Hashable {
         case .course(let id): return courseName(id)
         case .homework: return "作业文件夹"
         case .tasks: return "待办"
-        case .calendar: return "日历"
-        case .timetable: return "课表"
+        case .schedule: return "日程"
         case .settings: return "设置"
         default: return "全部资料"
         }
@@ -172,6 +209,7 @@ enum SidebarSelection: Hashable {
     func courseColor(_ id: UUID?) -> Color { Color(hex: state.courses.first { $0.id == id }?.colorHex ?? "#39786B") }
     func reload() {
         state = repository.state
+        scheduleSelection.reconcile(state)
         canUndoTaskDeletion = repository.canUndoTaskDeletion
         selectedMaterialIDs.formIntersection(Set(state.materials.map(\.id)))
         if !fileTypes.contains(formatFilter) { formatFilter = "全部格式" }

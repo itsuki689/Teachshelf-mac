@@ -33,7 +33,7 @@ import TeachshelfCore
         for size in [NSSize(width: 1260, height: 800), NSSize(width: 1020, height: 680)] {
             window.setContentSize(size)
             let originalFrame = window.frame
-            for page in [SidebarSelection.all, .calendar, .tasks, .homework, .settings, .timetable, .course(course.id), .all] {
+            for page in [SidebarSelection.all, .schedule, .tasks, .homework, .settings, .course(course.id), .all] {
                 store.navigate(to: page)
                 RunLoop.main.run(until: Date().addingTimeInterval(0.05))
                 host.layoutSubtreeIfNeeded()
@@ -46,6 +46,36 @@ import TeachshelfCore
                     for pane in [split as NSView] + split.subviews {
                         let rect = pane.convert(pane.bounds, to: host)
                         #expect(rect.maxX <= host.bounds.maxX + 1, "\(page) at \(size): pane overflows the window: \(rect)")
+                    }
+                }
+                if page == .schedule {
+                    for hasStartDate in [false, true] {
+                        var term = try #require(store.state.timetableTerms.first)
+                        let calendar = TimetableTerm.academicCalendar
+                        let today = calendar.startOfDay(for: Date())
+                        let offset = (calendar.component(.weekday, from: today) + 5) % 7
+                        term.weekOneMonday = hasStartDate ? calendar.date(byAdding: .day, value: -offset, to: today) : nil
+                        term.cancellations = []
+                        try repository.saveTimetableTerm(term)
+                        if let monday = term.weekOneMonday, let meeting = term.meetings.first {
+                            try repository.cancelTimetableClass(termID: term.id, meetingID: meeting.id, on: monday)
+                            store.scheduleSelection.setDate(monday)
+                        }
+                        store.reload()
+                        for mode in ScheduleMode.allCases {
+                            store.scheduleSelection.setMode(mode, in: store.state)
+                            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+                            host.layoutSubtreeIfNeeded()
+                            #expect(window.frame == originalFrame, "Switching to \(mode) at \(size) must not resize the window")
+                            #expect(abs(host.fittingSize.width - 1020) < 1, "\(mode) at \(size)")
+                            #expect(abs(host.fittingSize.height - 680) < 1, "\(mode) at \(size)")
+                            for split in splitViews(in: host) {
+                                for pane in [split as NSView] + split.subviews {
+                                    let rect = pane.convert(pane.bounds, to: host)
+                                    #expect(rect.maxX <= host.bounds.maxX + 1, "\(mode) at \(size): pane overflows the window: \(rect)")
+                                }
+                            }
+                        }
                     }
                 }
                 if page.isLibrary, let materialID = store.visibleMaterials.first?.id {

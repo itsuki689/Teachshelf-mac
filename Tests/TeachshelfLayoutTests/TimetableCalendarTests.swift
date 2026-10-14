@@ -55,6 +55,17 @@ struct TimetableCalendarTests {
         #expect(event?.timeLabel == "10:10–12:00")
     }
 
+    @Test func aSingleCancellationIsExcludedWithoutHidingOtherWeeksOrSameDayClasses() {
+        let lecture = TimetableMeeting(title: "计算系统基础 II", weeks: [8, 9], weekday: 2, startSection: 3, sectionCount: 2)
+        let evening = TimetableMeeting(title: "晚间课程", weeks: [8, 9], weekday: 2, startSection: 9, sectionCount: 3)
+        var term = TimetableTerm(name: "2026 秋季", weekOneMonday: date(2026, 8, 24), meetings: [lecture, evening])
+        term.cancellations = [TimetableCancellation(meetingID: lecture.id, date: date(2026, 10, 13), title: lecture.title)]
+        #expect(TimetableCalendar.classes(on: date(2026, 10, 13, hour: 12), terms: [term]).map(\.meeting.id) == [evening.id])
+        #expect(TimetableCalendar.classes(on: date(2026, 10, 20), terms: [term]).map(\.meeting.id) == [lecture.id, evening.id])
+        term.cancellations = []
+        #expect(TimetableCalendar.classes(on: date(2026, 10, 13), terms: [term]).map(\.meeting.id) == [lecture.id, evening.id])
+    }
+
     @Test func dateProjectionUsesNanjingCivilDayRatherThanUTC() {
         let monday = date(2026, 9, 7)
         let term = TimetableTerm(name: "秋季", weekOneMonday: monday, meetings: [

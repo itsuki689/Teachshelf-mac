@@ -11,12 +11,14 @@ struct TaskEditor: View {
     @ViewState<Date> private var deadline: Date
     @ViewState<String> private var materialSearch = ""
     private let isNew: Bool
+    private let compact: Bool
 
-    init(task: StudyTask, isNew: Bool = false) {
+    init(task: StudyTask, isNew: Bool = false, compact: Bool = false, calendar: Calendar = .current) {
         _draft = State(initialValue: task)
         _hasDeadline = State(initialValue: task.deadline != nil)
-        _deadline = State(initialValue: task.deadline ?? Calendar.current.date(byAdding: .day, value: 7, to: task.startsAt) ?? task.startsAt)
+        _deadline = State(initialValue: task.deadline ?? calendar.date(byAdding: .day, value: 7, to: task.startsAt) ?? task.startsAt)
         self.isNew = isNew
+        self.compact = compact
     }
 
     private var matchingMaterials: [MaterialRecord] {
@@ -64,7 +66,7 @@ struct TaskEditor: View {
                     if hasDeadline {
                         DatePicker("截止", selection: $deadline, displayedComponents: draft.isAllDay ? [.date] : [.date, .hourAndMinute])
                     }
-                    Toggle("在日历中显示", isOn: $draft.showOnCalendar)
+                    Toggle("在日程中显示", isOn: $draft.showOnCalendar)
                 }
                 Section("关联资料 · \(draft.materialIDs.count)") {
                     TextField("搜索资料", text: $materialSearch)
@@ -121,6 +123,6 @@ struct TaskEditor: View {
                 .keyboardShortcut(.defaultAction)
             }.padding(20)
         }
-        .frame(width: 650, height: 760)
+        .frame(width: 650, height: compact ? 620 : 760)
     }
 }

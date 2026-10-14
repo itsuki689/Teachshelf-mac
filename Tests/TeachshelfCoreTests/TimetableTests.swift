@@ -145,7 +145,7 @@ final class TimetableTests {
         #expect(throws: (any Error).self) { try LibraryRepository(root: root) }
     }
 
-    @Test func versionOneMigrationWaitsForMutationThenWritesProtectedVersionTwo() throws {
+    @Test func versionOneMigrationWaitsForMutationThenWritesProtectedVersionFour() throws {
         let root = try folder(), index = root.appendingPathComponent("library.json")
         let existing = Course(name: "原有课程", semester: "旧学期")
         var legacy = LibraryState(); legacy.schemaVersion = 1; legacy.courses = [existing]
@@ -155,7 +155,7 @@ final class TimetableTests {
         try original.write(to: index)
         do {
             let repo = try LibraryRepository(root: root)
-            #expect(repo.state.schemaVersion == 2)
+            #expect(repo.state.schemaVersion == 4)
             #expect(repo.state.courses == [existing])
             #expect(repo.state.timetableTerms.isEmpty)
             #expect(try Data(contentsOf: index) == original)
@@ -164,12 +164,12 @@ final class TimetableTests {
         do {
             let repo = try LibraryRepository(root: root)
             _ = try repo.importUndergraduateTimetable(schedule([course()]))
-            #expect(repo.state.schemaVersion == 2)
+            #expect(repo.state.schemaVersion == 4)
             #expect(repo.state.courses.contains(existing))
             #expect(try Data(contentsOf: root.appendingPathComponent("library.json.bak")) == original)
         }
         let persisted = try JSONDecoder().decode(LibraryState.self, from: Data(contentsOf: index))
-        #expect(persisted.schemaVersion == 2)
+        #expect(persisted.schemaVersion == 4)
         #expect(persisted.timetableTerms.count == 1)
         let reopened = try LibraryRepository(root: root)
         #expect(reopened.state == persisted)
@@ -177,7 +177,7 @@ final class TimetableTests {
 
     @Test func futureAndInvalidSchemaVersionsAreRejectedWithoutRewriting() throws {
         let root = try folder(), index = root.appendingPathComponent("library.json")
-        for version in [0, 3, Int.max] {
+        for version in [0, 5, Int.max] {
             var state = LibraryState(); state.schemaVersion = version
             let bytes = try JSONEncoder().encode(state)
             try bytes.write(to: index)
@@ -200,6 +200,63 @@ final class TimetableTests {
         #expect(term.date(week: 3, weekday: 1) == nil)
         #expect(term.date(week: 1, weekday: 8) == nil)
         #expect(TimetableTerm(name: "未设置").week(containing: monday) == nil)
+    }
+
+    @Test func firstMondayIsInferredFromTheScreenshotsEighthAcademicWeekInShanghai() throws {
+        let reference = try academicDate("2026-10-14T04:00:00Z") // Screenshot: October 14, academic week 8.
+        let expected = try academicDate("2026-08-23T16:00:00Z") // August 24 00:00 in Shanghai.
+        let monday = try #require(TimetableTerm.firstMonday(referenceDate: reference, academicWeek: 8))
+        #expect(monday == expected)
+        let term = TimetableTerm(name: "2026 秋季", weekOneMonday: monday)
+        #expect(term.week(containing: reference) == 8)
+        #expect(term.date(week: 8, weekday: 3) == (try academicDate("2026-10-13T16:00:00Z")))
+        // Sunday in UTC is already Monday in Shanghai; the academic week changes there.
+        let shanghaiMonday = try academicDate("2026-10-11T16:00:00Z")
+        let previousDay = shanghaiMonday.addingTimeInterval(-1)
+        #expect(TimetableTerm.firstMonday(referenceDate: shanghaiMonday, academicWeek: 8) == expected)
+        #expect(TimetableTerm.firstMonday(referenceDate: previousDay, academicWeek: 8) == (try academicDate("2026-08-16T16:00:00Z")))
+        #expect(TimetableTerm.firstMonday(referenceDate: reference, academicWeek: 1) == shanghaiMonday)
+    }
+
+    @Test func firstMondayRejectsInvalidWeeksAndNonfiniteDates() throws {
+        let reference = try academicDate("2026-10-14T04:00:00Z")
+        for week in [Int.min, -1, 0, 61, Int.max] {
+            #expect(TimetableTerm.firstMonday(referenceDate: reference, academicWeek: week) == nil)
+        }
+        for interval in [Double.nan, Double.infinity, -Double.infinity] {
+            #expect(TimetableTerm.firstMonday(referenceDate: Date(timeIntervalSinceReferenceDate: interval), academicWeek: 8) == nil)
+        }
+        let earliest = try #require(TimetableTerm.firstMonday(referenceDate: reference, academicWeek: 60))
+        let term = TimetableTerm(name: "较长学期", weekOneMonday: earliest, weekCount: 60)
+        #expect(term.week(containing: reference) == 60)
+    }
+
+    @Test func explicitlyChosenScreenshotTimesPersistWithoutChangingCourseOrMeetingIdentity() throws {
+        let root = try folder()
+        var saved: TimetableTerm?
+        var originalCourses: [Course] = []
+        do {
+            let repo = try LibraryRepository(root: root)
+            _ = try repo.importUndergraduateTimetable(schedule([course()]))
+            let original = try #require(repo.state.timetableTerms.first)
+            originalCourses = repo.state.courses
+            #expect(original.sectionTimes.isEmpty) // Import does not silently apply the screenshot preset.
+            var edited = original
+            edited.weekOneMonday = TimetableTerm.firstMonday(referenceDate: try academicDate("2026-10-14T04:00:00Z"), academicWeek: 8)
+            edited.sectionTimes = UndergraduateTimetableDefaults.sectionTimes
+            try repo.saveTimetableTerm(edited)
+            saved = edited
+            #expect(repo.state.courses == originalCourses)
+            #expect(repo.state.timetableTerms.first?.id == original.id)
+            #expect(repo.state.timetableTerms.first?.meetings == original.meetings)
+        }
+        let reopened = try LibraryRepository(root: root)
+        let term = try #require(reopened.state.timetableTerms.first)
+        #expect(term == saved)
+        #expect(reopened.state.courses == originalCourses)
+        #expect(term.sectionTimes.map(\.section) == Array(1...11))
+        #expect(term.sectionTimes.map(\.startMinute) == [480, 540, 610, 670, 840, 900, 970, 1030, 1110, 1170, 1230])
+        #expect(term.sectionTimes.map(\.endMinute) == [530, 590, 660, 720, 890, 950, 1020, 1080, 1160, 1220, 1280])
     }
 
     @Test func invalidImportsNeverAlterMetadataOrExistingSemester() throws {

@@ -11,7 +11,10 @@ enum TimetableCalendar {
         var meeting: TimetableMeeting
         var day: Date
         var timeLabel: String?
-        var id: String { "\(termID.uuidString)-\(meeting.id.uuidString)-\(Int(day.timeIntervalSince1970))" }
+        var sourceDate: Date? = nil
+        var rescheduleID: UUID? = nil
+        var originalDate: Date { sourceDate ?? day }
+        var id: String { "\(termID.uuidString)-\(meeting.id.uuidString)-\(Int(originalDate.timeIntervalSince1970))" }
         var sectionLabel: String {
             meeting.sectionCount == 1 ? "第 \(meeting.startSection) 节" : "第 \(meeting.startSection)–\(meeting.endSection) 节"
         }
@@ -19,14 +22,13 @@ enum TimetableCalendar {
 
     static func classes(on day: Date, terms: [TimetableTerm], courseID: UUID? = nil) -> [DayClass] {
         let day = calendar.startOfDay(for: day)
-        let weekday = (calendar.component(.weekday, from: day) + 5) % 7 + 1
         return terms.flatMap { term -> [DayClass] in
-            guard let week = term.week(containing: day) else { return [] }
-            return term.meetings.compactMap { meeting in
-                guard meeting.isScheduled, meeting.weekday == weekday, meeting.weeks.contains(week),
-                      courseID == nil || meeting.courseID == courseID else { return nil }
-                return DayClass(termID: term.id, termName: term.name, meeting: meeting, day: day,
-                                timeLabel: timeLabel(for: meeting, sectionTimes: term.sectionTimes))
+            return term.occurrences(on: day).compactMap { occurrence in
+                let meeting = occurrence.meeting
+                guard courseID == nil || meeting.courseID == courseID else { return nil }
+                return DayClass(termID: term.id, termName: term.name, meeting: meeting, day: occurrence.date,
+                                timeLabel: timeLabel(for: meeting, sectionTimes: term.sectionTimes),
+                                sourceDate: occurrence.originalDate, rescheduleID: occurrence.rescheduleID)
             }
         }.sorted {
             if $0.meeting.startSection != $1.meeting.startSection { return $0.meeting.startSection < $1.meeting.startSection }
