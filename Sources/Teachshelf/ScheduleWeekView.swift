@@ -189,10 +189,10 @@ struct ScheduleWeekView: View {
 
     private func gridBackground(_ metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> some View {
         ZStack(alignment: .topLeading) {
-            // Tint compressed breaks so a card ending at the end-of-period
-            // rule cannot be mistaken for an incorrectly shortened card.
+            // Only lunch and the hours outside teaching retain their own space.
             ForEach(Array(timeline.segments.enumerated()), id: \.offset) { _, segment in
-                if !timeline.times.contains(where: { Double($0.startMinute) <= segment.start && Double($0.endMinute) >= segment.end }) {
+                if segment.upper > segment.lower,
+                   !timeline.times.contains(where: { Double($0.startMinute) <= segment.start && Double($0.endMinute) >= segment.end }) {
                     Rectangle().fill(Color.primary.opacity(0.018))
                         .frame(width: metrics.labelWidth + metrics.columnWidth * 7,
                                height: max(0, segment.upper - segment.lower))
@@ -225,6 +225,16 @@ struct ScheduleWeekView: View {
             }
             Text("早间").font(.system(size: 8)).foregroundStyle(.tertiary)
                 .frame(width: max(0, metrics.labelWidth - 8), height: timeline.y(for: Double(timeline.times.first?.startMinute ?? 480)))
+            if let lunch = timeline.lunchBreak {
+                let top = timeline.y(for: Double(lunch.lowerBound))
+                let bottom = timeline.y(for: Double(lunch.upperBound))
+                if sectionTimes.contains(where: { $0.endMinute == lunch.lowerBound }) || term == nil {
+                    clockTick(lunch.lowerBound, y: top, metrics: metrics)
+                }
+                Text("午休").font(.system(size: 9)).foregroundStyle(.secondary)
+                    .frame(width: max(0, metrics.labelWidth - 8), height: bottom - top)
+                    .offset(y: top)
+            }
             if let end = timeline.times.last?.endMinute {
                 let nightTop = timeline.y(for: Double(end))
                 if sectionTimes.contains(where: { $0.endMinute == end }) || term == nil {
@@ -256,9 +266,9 @@ struct ScheduleWeekView: View {
     private func timedCard(_ event: PlanDisplayEvent, day: Date, index: Int, lane: ScheduleWeekLane,
                            metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> some View {
         let vertical = timeRect(event, day: day, timeline: timeline)
-        let width = metrics.columnWidth / CGFloat(lane.laneCount)
-        let rect = CGRect(x: metrics.labelWidth + CGFloat(index) * metrics.columnWidth + CGFloat(lane.lane) * width + 2,
-                          y: vertical.minY + metrics.allDayHeight, width: max(1, width - 4), height: vertical.height)
+        let rect = metrics.eventRect(dayIndex: index, lane: lane.lane, laneCount: lane.laneCount,
+                                     top: vertical.minY + metrics.allDayHeight, height: vertical.height,
+                                     isCourse: event.planOccurrence == nil)
         let card = Button {
             guard drag == nil, Date().timeIntervalSince(lastDragEnded) > 0.15 else { return }
             open(event)
@@ -300,18 +310,18 @@ struct ScheduleWeekView: View {
                 }
                 ForEach(TimetableLayout.placements(meetings)) { placement in
                     if let vertical = timeline.sectionRect(start: placement.meeting.startSection, count: placement.meeting.sectionCount) {
-                        let width = metrics.columnWidth / CGFloat(placement.laneCount)
-                        let size = CGSize(width: max(1, width - 4), height: max(1, vertical.height))
+                        let rect = metrics.eventRect(dayIndex: weekday - 1, lane: placement.lane, laneCount: placement.laneCount,
+                                                     top: vertical.minY, height: vertical.height, isCourse: true)
                         Button {
                             onMeeting(ScheduleMeetingContext(term: term, meeting: placement.meeting, date: nil, selectedDate: selection.selectedDate))
                         } label: {
                             Text(placement.meeting.title).font(.system(size: 10, weight: .semibold)).lineLimit(2)
-                                .padding(4).frame(width: size.width, height: size.height, alignment: .topLeading)
+                                .padding(4).frame(width: rect.width, height: rect.height, alignment: .topLeading)
                                 .modifier(WeekCardSurface(color: eventColorForCourse(placement.meeting.courseID),
                                                           isCourse: true, isDark: theme.isDark))
                         }
                         .buttonStyle(.plain)
-                        .offset(x: metrics.labelWidth + CGFloat(weekday - 1) * metrics.columnWidth + CGFloat(placement.lane) * width + 2, y: vertical.minY)
+                        .offset(x: rect.minX, y: rect.minY)
                     }
                 }
             }
@@ -431,8 +441,8 @@ struct ScheduleWeekView: View {
 
     private func targetRect(_ event: PlanDisplayEvent, target: WeekPlanDrop,
                             metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> CGRect {
-        let x = metrics.labelWidth + CGFloat(target.dayIndex) * metrics.columnWidth + 2
-        let width = max(1, metrics.columnWidth - 4)
+        let column = metrics.eventRect(dayIndex: target.dayIndex, top: 0, height: 0, isCourse: event.planOccurrence == nil)
+        let x = column.minX, width = column.width
         if event.isDeadline || event.isAllDay {
             // This overlay lives inside the time canvas; the actual header is
             // immediately above it, in the same unclipped outer coordinate space.

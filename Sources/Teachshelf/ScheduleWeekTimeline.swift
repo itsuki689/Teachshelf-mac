@@ -2,8 +2,8 @@ import Foundation
 import CoreGraphics
 import TeachshelfCore
 
-/// A whole day in a bounded canvas. Teaching periods have equal visual weight;
-/// breaks and the hours before/after teaching remain visible, at a smaller scale.
+/// A whole day in a bounded canvas. Small breaks collapse to a shared boundary;
+/// their former space belongs to lunch, with early and night hours still visible.
 struct ScheduleWeekTimeline {
     struct Segment {
         let start: Double
@@ -15,11 +15,12 @@ struct ScheduleWeekTimeline {
     let height: CGFloat
     let times: [TimetableSectionTime]
     let segments: [Segment]
+    let lunchBreak: Range<Int>?
 
-    /// Both sides of each teaching period are visible grid boundaries. In
-    /// particular, the final end is also the start of the night region.
+    /// Collapsed ends share the next start's rule. Lunch and the final end keep
+    /// separate boundaries, so neither the midday nor night region disappears.
     var gridMinutes: [Int] {
-        Array(Set(times.flatMap { [$0.startMinute, $0.endMinute] })).sorted()
+        Array(Set(times.map(\.startMinute) + [lunchBreak?.lowerBound, times.last?.endMinute].compactMap { $0 })).sorted()
     }
 
     init(height: CGFloat, sectionCount: Int, times supplied: [TimetableSectionTime]) {
@@ -39,17 +40,28 @@ struct ScheduleWeekTimeline {
             }
         }
         self.times = times.sorted { $0.startMinute < $1.startMinute }
-        // Use interval boundaries rather than assuming a particular campus's
-        // lunch break, so custom section clocks remain a monotonic mapping.
         let boundaries = Array(Set([0, 1440] + times.flatMap { [$0.startMinute, $0.endMinute] })).sorted()
         let first = times.map(\.startMinute).min() ?? 480
         let last = times.map(\.endMinute).max() ?? 1280
+        let internalBreaks = zip(boundaries, boundaries.dropFirst()).compactMap { start, end -> Range<Int>? in
+            guard start >= first, end <= last,
+                  !times.contains(where: { $0.startMinute <= start && $0.endMinute >= end }) else { return nil }
+            return start..<end
+        }
+        let lunch = internalBreaks.filter { $0.lowerBound < 840 && $0.upperBound > 720 }
+            .max { $0.count < $1.count }
+        self.lunchBreak = lunch
+        // Preserve teaching/early/night heights: only move the old small-break
+        // weights into the actual gap around noon, including custom clocks.
+        let lunchWeight = internalBreaks.reduce(CGFloat.zero) {
+            $0 + min(0.45, max(0.14, CGFloat($1.count) / 300))
+        }
         let weighted = zip(boundaries, boundaries.dropFirst()).map { start, end -> (Double, Double, CGFloat) in
             let teaching = times.contains { $0.startMinute <= start && $0.endMinute >= end }
             let weight: CGFloat
             if teaching { weight = CGFloat(end - start) / 50 }
             else if end <= first || start >= last { weight = 0.65 }
-            else { weight = min(0.45, max(0.14, CGFloat(end - start) / 300)) }
+            else { weight = lunch == (start..<end) ? lunchWeight : 0 }
             return (Double(start), Double(end), weight)
         }
         let total = max(1, weighted.reduce(CGFloat.zero) { $0 + $1.2 })
@@ -71,7 +83,7 @@ struct ScheduleWeekTimeline {
 
     func minute(at y: CGFloat, snapping: Int = 15) -> Int? {
         guard y.isFinite, height > 0, y >= 0, y < height,
-              let segment = segments.first(where: { y <= $0.upper && $0.upper > $0.lower }) else { return nil }
+              let segment = segments.first(where: { y >= $0.lower && y < $0.upper }) else { return nil }
         let ratio = Double((y - segment.lower) / (segment.upper - segment.lower))
         let raw = segment.start + (segment.end - segment.start) * ratio
         let step = Double(max(1, snapping))

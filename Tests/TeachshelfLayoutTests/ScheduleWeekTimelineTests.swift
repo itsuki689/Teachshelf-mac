@@ -30,7 +30,7 @@ struct ScheduleWeekTimelineTests {
 
     @Test func manualPlansCanSnapInLunchBreakAndNightWithoutASelectedTerm() {
         let timeline = ScheduleWeekTimeline(height: 470, sectionCount: 11, times: [])
-        for minute in [15, 375, 480, 600, 780, 840, 1320, 1425] {
+        for minute in [15, 375, 480, 630, 780, 840, 1320, 1425] {
             #expect(timeline.minute(at: timeline.y(for: Double(minute))) == minute)
         }
         #expect(timeline.minute(at: -.infinity) == nil)
@@ -62,7 +62,7 @@ struct ScheduleWeekTimelineTests {
                 let activity = timeline.intervalRect(start: Double(time.startMinute), end: Double(time.endMinute), minimumHeight: 13)
                 #expect(course == activity)
                 #expect(timeline.gridMinutes.contains(time.startMinute))
-                #expect(timeline.gridMinutes.contains(time.endMinute))
+                #expect(timeline.gridMinutes.contains { abs(timeline.y(for: Double($0)) - course.maxY) < 0.001 })
                 #expect(course.minY == timeline.y(for: Double(time.startMinute)))
                 #expect(abs(course.maxY - timeline.y(for: Double(time.endMinute))) < 0.001)
             }
@@ -79,5 +79,34 @@ struct ScheduleWeekTimelineTests {
         #expect(card.minY == timeline.y(for: 1425))
         #expect(card.height > 0 && card.height < 13)
         #expect(abs(card.maxY - timeline.height) < 0.001)
+    }
+
+    @Test func smallBreaksCollapseAndTheirFormerHeightBelongsToLunch() throws {
+        let timeline = ScheduleWeekTimeline(height: 468, sectionCount: 11, times: [])
+        #expect(timeline.lunchBreak == 720..<840)
+        for (previous, next) in zip(timeline.times, timeline.times.dropFirst()) where previous.endMinute != 720 {
+            #expect(timeline.y(for: Double(previous.endMinute)) == timeline.y(for: Double(next.startMinute)))
+            // Dragging onto a shared line chooses the following period, not
+            // the hidden previous end or one of the collapsed break minutes.
+            #expect(timeline.minute(at: timeline.y(for: Double(next.startMinute)), snapping: 1) == next.startMinute)
+            #expect(!timeline.gridMinutes.contains(previous.endMinute))
+        }
+        let first = try #require(timeline.sectionRect(start: 1, count: 1))
+        let lunchHeight = timeline.y(for: 840) - timeline.y(for: 720)
+        // Former lunch (0.4 periods) + nine short breaks (0.14 each).
+        #expect(abs(lunchHeight / first.height - 1.66) < 0.001)
+        #expect(abs(timeline.y(for: 480) / first.height - 0.65) < 0.001)
+    }
+
+    @Test func customLunchTimesKeepTheirOwnExpandedInterval() {
+        var times = UndergraduateTimetableDefaults.sectionTimes
+        times[3].endMinute = 735
+        times[4].startMinute = 810
+        let timeline = ScheduleWeekTimeline(height: 468, sectionCount: 11, times: times)
+        #expect(timeline.lunchBreak == 735..<810)
+        #expect(timeline.gridMinutes.contains(735))
+        #expect(timeline.y(for: 735) < timeline.y(for: 780))
+        #expect(timeline.y(for: 780) < timeline.y(for: 810))
+        #expect(timeline.minute(at: timeline.y(for: 780)) == 780)
     }
 }
