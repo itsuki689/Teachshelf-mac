@@ -113,7 +113,7 @@ struct ScheduleSelectionTests {
         #expect(selection.week(in: state) == 1)
         selection.setMode(.agenda, in: state)
         #expect(ScheduleData.agendaDays(selection: selection).first == realDay)
-        #expect(ScheduleData.agendaDays(selection: selection).last == date(2026, 9, 15))
+        #expect(ScheduleData.agendaDays(selection: selection) == [realDay])
     }
 
     @Test func semesterCourseAndVisibilityFiltersApplyToCoursesAndTasksTogether() {
@@ -180,15 +180,15 @@ struct ScheduleSelectionTests {
         #expect(ScheduleData.tasks(on: day, in: state, selection: selection).map(\.id) == [task.id])
     }
 
-    @Test func monthShiftsClampTheDayAndAgendaShiftsKeepASevenDayWindow() {
+    @Test func monthShiftsClampTheDayAndDayViewNavigatesOneDayAtATime() {
         let selection = ScheduleSelection(selectedDate: date(2026, 1, 31), mode: .month)
         let state = LibraryState()
         selection.shift(1, in: state)
         #expect(selection.selectedDate == date(2026, 2, 28))
         selection.setMode(.agenda, in: state)
         selection.shift(1, in: state)
-        #expect(selection.selectedDate == date(2026, 3, 7))
-        #expect(ScheduleData.agendaDays(selection: selection).last == date(2026, 3, 13))
+        #expect(selection.selectedDate == date(2026, 3, 1))
+        #expect(ScheduleData.agendaDays(selection: selection) == [date(2026, 3, 1)])
         selection.shift(-1, in: state)
         #expect(selection.selectedDate == date(2026, 2, 28))
         selection.setMode(.week, in: state)

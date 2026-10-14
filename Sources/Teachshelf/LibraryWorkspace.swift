@@ -17,13 +17,13 @@ struct LibraryWorkspace: View {
         VStack(spacing: 0) {
             commandBar
             if let courseID = store.currentCourseID {
-                let tasks = store.state.tasks.filter { $0.courseID == courseID && !$0.isArchived && !$0.isCompleted }
+                let tasks = store.state.tasks.filter { $0.courseID == courseID && $0.completionRequired && !$0.isArchived && !$0.isCompleted && $0.cancelledAt == nil }
                 if !tasks.isEmpty {
                     HStack(spacing: 12) {
-                        Label("\(tasks.count) 个未完成待办", systemImage: "checklist").font(.caption.weight(.medium)).foregroundStyle(.primary)
+                        Label("\(tasks.count) 个待完成计划", systemImage: "checklist").font(.caption.weight(.medium)).foregroundStyle(.primary)
                         Text(tasks.prefix(2).map(\.title).joined(separator: "  ·  ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         Spacer()
-                        Button("查看待办") { store.navigate(to: .tasks) }.buttonStyle(.plain).foregroundStyle(theme.ink).font(.caption)
+                        Button("查看计划") { store.navigate(to: .tasks) }.buttonStyle(.plain).foregroundStyle(theme.ink).font(.caption)
                     }.padding(.horizontal, 24).padding(.vertical, 10).background(theme.ink.opacity(0.06))
                 }
             }

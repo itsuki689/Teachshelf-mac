@@ -72,19 +72,63 @@ public struct StudyTask: Identifiable, Codable, Hashable, Sendable {
     public var completedAt: Date?
     public var archivedAt: Date?
     public var courseNameSnapshot: String?
+    public var origin: PlanOrigin
+    public var hasExecutionTime: Bool
+    public var endsAt: Date?
+    public var location: String
+    public var showInMonth: Bool
+    public var repeatRule: PlanRepeatRule?
+    public var completionRequired: Bool
+    public var cancelledAt: Date?
+    public var deadlineIsAllDay: Bool
+    public var exceptions: [PlanException]
 
-    public init(id: UUID = UUID(), title: String, content: String = "", kind: String = "任务", courseID: UUID? = nil, materialIDs: [UUID] = [], startsAt: Date = Date(), deadline: Date? = nil, isAllDay: Bool = true, showOnCalendar: Bool = true, completedAt: Date? = nil, archivedAt: Date? = nil, courseNameSnapshot: String? = nil) {
+    public init(id: UUID = UUID(), title: String, content: String = "", kind: String = "任务", courseID: UUID? = nil, materialIDs: [UUID] = [], startsAt: Date = Date(), deadline: Date? = nil, isAllDay: Bool = true, showOnCalendar: Bool = true, completedAt: Date? = nil, archivedAt: Date? = nil, courseNameSnapshot: String? = nil, origin: PlanOrigin = .activity, hasExecutionTime: Bool = true, endsAt: Date? = nil, location: String = "", showInMonth: Bool = false, repeatRule: PlanRepeatRule? = nil, completionRequired: Bool = true, cancelledAt: Date? = nil, deadlineIsAllDay: Bool = true, exceptions: [PlanException] = []) {
         self.id = id; self.title = title; self.content = content; self.kind = kind
         self.courseID = courseID; self.materialIDs = materialIDs; self.startsAt = startsAt
         self.deadline = deadline; self.isAllDay = isAllDay; self.showOnCalendar = showOnCalendar
         self.completedAt = completedAt; self.archivedAt = archivedAt; self.courseNameSnapshot = courseNameSnapshot
+        self.origin = origin; self.hasExecutionTime = hasExecutionTime; self.endsAt = endsAt
+        self.location = location; self.showInMonth = showInMonth; self.repeatRule = repeatRule
+        self.completionRequired = completionRequired; self.cancelledAt = cancelledAt
+        self.deadlineIsAllDay = deadlineIsAllDay; self.exceptions = exceptions
     }
     public var isCompleted: Bool { completedAt != nil }
     public var isArchived: Bool { archivedAt != nil }
+    public var isCancelled: Bool { cancelledAt != nil }
+    public var isFixed: Bool { origin == .fixed }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, content, kind, courseID, materialIDs, startsAt, deadline, isAllDay, showOnCalendar, completedAt, archivedAt, courseNameSnapshot
+        case origin, hasExecutionTime, endsAt, location, showInMonth, repeatRule, completionRequired, cancelledAt, deadlineIsAllDay, exceptions
+    }
+    public init(from decoder: Decoder) throws {
+        let v = try decoder.container(keyedBy: CodingKeys.self)
+        id = try v.decode(UUID.self, forKey: .id); title = try v.decode(String.self, forKey: .title)
+        content = try v.decode(String.self, forKey: .content); kind = try v.decode(String.self, forKey: .kind)
+        courseID = try v.decodeIfPresent(UUID.self, forKey: .courseID)
+        materialIDs = try v.decode([UUID].self, forKey: .materialIDs)
+        startsAt = try v.decode(Date.self, forKey: .startsAt); deadline = try v.decodeIfPresent(Date.self, forKey: .deadline)
+        isAllDay = try v.decode(Bool.self, forKey: .isAllDay); showOnCalendar = try v.decode(Bool.self, forKey: .showOnCalendar)
+        completedAt = try v.decodeIfPresent(Date.self, forKey: .completedAt)
+        archivedAt = try v.decodeIfPresent(Date.self, forKey: .archivedAt)
+        courseNameSnapshot = try v.decodeIfPresent(String.self, forKey: .courseNameSnapshot)
+        origin = v.contains(.origin) ? try v.decode(PlanOrigin.self, forKey: .origin) : .activity
+        // Older tasks displayed their deadline instead of execution when both existed.
+        hasExecutionTime = v.contains(.hasExecutionTime) ? try v.decode(Bool.self, forKey: .hasExecutionTime) : deadline == nil
+        endsAt = try v.decodeIfPresent(Date.self, forKey: .endsAt)
+        location = v.contains(.location) ? try v.decode(String.self, forKey: .location) : ""
+        showInMonth = v.contains(.showInMonth) ? try v.decode(Bool.self, forKey: .showInMonth) : false
+        repeatRule = try v.decodeIfPresent(PlanRepeatRule.self, forKey: .repeatRule)
+        completionRequired = v.contains(.completionRequired) ? try v.decode(Bool.self, forKey: .completionRequired) : true
+        cancelledAt = try v.decodeIfPresent(Date.self, forKey: .cancelledAt)
+        deadlineIsAllDay = v.contains(.deadlineIsAllDay) ? try v.decode(Bool.self, forKey: .deadlineIsAllDay) : isAllDay
+        exceptions = v.contains(.exceptions) ? try v.decode([PlanException].self, forKey: .exceptions) : []
+    }
 }
 
 public struct LibraryState: Codable, Hashable, Sendable {
-    public var schemaVersion: Int = 4
+    public var schemaVersion: Int = 5
     public var courses: [Course] = []
     public var materials: [MaterialRecord] = []
     public var tasks: [StudyTask] = []

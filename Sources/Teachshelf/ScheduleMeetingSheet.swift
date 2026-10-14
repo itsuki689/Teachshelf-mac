@@ -34,6 +34,17 @@ struct ScheduleMeetingSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(context.term.name).font(.callout).foregroundStyle(.secondary)
+                    Label("固定计划 · 来自导入课表", systemImage: "lock")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle("将此时段加入月历", isOn: Binding(get: {
+                        store.state.timetableTerms.first { $0.id == context.term.id }?.meetings.first { $0.id == meeting.id }?.showInMonth == true
+                    }, set: { visible in
+                        guard var master = store.state.timetableTerms.first(where: { $0.id == context.term.id })?.meetings.first(where: { $0.id == meeting.id }) else { return }
+                        master.showInMonth = visible
+                        store.changeTimetable(termID: context.term.id, label: visible ? "上课安排加入月历" : "上课安排移出月历") {
+                            try $0.updateTimetableMeeting(termID: context.term.id, meeting: master)
+                        }
+                    })).toggleStyle(.checkbox)
                     Divider()
                     if let date = context.date { LabeledContent("日期", value: TimetableCalendar.formatted(date, template: "yMMMdEEEE")) }
                     if let sourceDate = context.sourceDate, context.term.reschedules.contains(where: {
@@ -50,7 +61,7 @@ struct ScheduleMeetingSheet: View {
                     if !meeting.courseCode.isEmpty { LabeledContent("课程号", value: meeting.courseCode) }
                     if !meeting.note.isEmpty { Text(meeting.note).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
                     if context.date == nil {
-                        Text("关联待办将使用日程当前所选日期，可在创建时调整。").font(.caption).foregroundStyle(.secondary)
+                        Text("关联计划将使用当前所选日期，可在创建时调整。").font(.caption).foregroundStyle(.secondary)
                     }
                     if let date = context.date {
                         Divider()
@@ -71,8 +82,9 @@ struct ScheduleMeetingSheet: View {
                 Button("调整安排") { panel = .edit }.buttonStyle(.bordered)
                 Spacer(minLength: 0)
                 if let courseID {
-                    Button("新建关联待办") {
-                        panel = .task(StudyTask(title: "", kind: "作业", courseID: courseID, startsAt: context.date ?? context.selectedDate))
+                    Button("新建关联计划") {
+                        panel = .task(StudyTask(title: "", kind: "作业", courseID: courseID, startsAt: context.date ?? context.selectedDate,
+                                               hasExecutionTime: false, completionRequired: true))
                     }.appPrimaryButton()
                 } else { Button("完成") { dismiss() } }
             }

@@ -176,21 +176,21 @@ final class TimetableCancellationTests {
         try original.write(to: index)
         do {
             let repo = try LibraryRepository(root: root)
-            #expect(repo.state.schemaVersion == 4)
+            #expect(repo.state.schemaVersion == 5)
             #expect(repo.state.timetableTerms.first?.cancellations.isEmpty == true)
             #expect(try Data(contentsOf: index) == original)
         }
         do {
             let repo = try LibraryRepository(root: root)
             try repo.cancelTimetableClass(termID: term.id, meetingID: meeting.id, on: try date("2026-10-13T03:00:00Z"))
-            #expect(repo.state.schemaVersion == 4)
+            #expect(repo.state.schemaVersion == 5)
             #expect(try Data(contentsOf: root.appendingPathComponent("library.json.bak")) == original)
         }
         let reopened = try LibraryRepository(root: root)
         #expect(reopened.state.timetableTerms.first?.cancellations.count == 1)
         #expect(reopened.state.timetableTerms.first?.meetings == [meeting])
         let persisted = try JSONDecoder().decode(LibraryState.self, from: Data(contentsOf: index))
-        #expect(persisted.schemaVersion == 4)
+        #expect(persisted.schemaVersion == 5)
         #expect(persisted == reopened.state)
     }
 

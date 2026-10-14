@@ -33,25 +33,14 @@ struct ScheduleMonthView: View {
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func tasks(on day: Date) -> [StudyTask] {
-        ScheduleData.tasks(on: day, in: store.state, selection: selection)
-    }
-
-    private func classes(on day: Date) -> [TimetableCalendar.DayClass] {
-        ScheduleData.classes(on: day, in: store.state, selection: selection)
-    }
-
     private func dayCell(_ day: Date, height: CGFloat, compact: Bool) -> some View {
         let sameMonth = calendar.isDate(day, equalTo: selection.selectedDate, toGranularity: .month)
         let isSelected = calendar.isDate(day, inSameDayAs: selection.selectedDate)
         let isToday = calendar.isDateInToday(day)
-        let dayTasks = tasks(on: day)
-        let dayClasses = classes(on: day)
+        let events = ScheduleData.planEvents(on: day, in: store.state, selection: selection, forMonth: true)
+        let dueCount = events.filter(\.isDeadline).count
         let eventLimit = height < 96 ? 1 : 2
-        let shownClasses = Array(dayClasses.prefix(dayTasks.isEmpty ? eventLimit : 1))
-        let shownTasks = Array(dayTasks.prefix(eventLimit - shownClasses.count))
-        let remainingClasses = dayClasses.count - shownClasses.count
-        let remainingTasks = dayTasks.count - shownTasks.count
+        let shown = Array(events.prefix(eventLimit))
         return Button { selection.setDate(day) } label: {
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
@@ -63,34 +52,26 @@ struct ScheduleMonthView: View {
                     Spacer(minLength: 0)
                 }
                 if compact {
-                    if !dayClasses.isEmpty {
-                        Label("\(dayClasses.count) 次课", systemImage: "book.closed.fill")
+                    if dueCount > 0 {
+                        Label("\(dueCount) DDL", systemImage: "flag.fill")
                             .font(.system(size: 10)).foregroundStyle(theme.ink).lineLimit(1)
                     }
-                    if !dayTasks.isEmpty {
-                        Label("\(dayTasks.count) 待办", systemImage: "checklist")
-                            .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    if events.count > dueCount {
+                        Text("\(events.count - dueCount) 项安排").font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                     }
                 } else {
-                    ForEach(shownClasses) { event in
+                    ForEach(shown) { event in
                         HStack(spacing: 4) {
-                            Image(systemName: "book.closed.fill").font(.system(size: 8))
-                                .foregroundStyle(ScheduleEventColor.course(event.meeting.courseID, in: store.state, theme: theme))
-                            Text("\(event.meeting.startSection)·\(event.meeting.title)").font(.system(size: 11)).lineLimit(1)
+                            Image(systemName: event.isDeadline ? "flag.fill" : "circle.fill")
+                                .font(.system(size: 8))
+                                .foregroundStyle(ScheduleEventColor.course(event.courseID, in: store.state, theme: theme))
+                            Text(event.title).font(.system(size: 11)).lineLimit(1)
+                                .strikethrough(event.isCompleted)
+                                .foregroundStyle(event.isCompleted ? Color.secondary : Color.primary)
                         }
                     }
-                    ForEach(shownTasks) { task in
-                        HStack(spacing: 4) {
-                            Circle().fill(task.isCompleted ? Color.secondary : ScheduleEventColor.course(task.courseID, in: store.state, theme: theme))
-                                .frame(width: 5, height: 5)
-                            Text(task.title).font(.system(size: 11)).strikethrough(task.isCompleted).lineLimit(1)
-                                .foregroundStyle(task.isCompleted ? Color.secondary : Color.primary)
-                        }
-                    }
-                    if remainingClasses + remainingTasks > 0 {
-                        Text([remainingClasses > 0 ? "+\(remainingClasses) 次课" : nil,
-                              remainingTasks > 0 ? "+\(remainingTasks) 待办" : nil].compactMap { $0 }.joined(separator: " · "))
-                            .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    if events.count > shown.count {
+                        Text("+\(events.count - shown.count) 项").font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
@@ -104,7 +85,7 @@ struct ScheduleMonthView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(TimetableCalendar.formatted(day, template: "yMMMdEEEE"))
-        .accessibilityValue("\(isSelected ? "已选择，" : "")\(dayClasses.count) 次课，\(dayTasks.count) 项待办")
+        .accessibilityValue("\(isSelected ? "已选择，" : "")\(dueCount) 个 DDL，\(events.count - dueCount) 项安排")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

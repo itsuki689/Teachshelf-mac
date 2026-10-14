@@ -33,10 +33,10 @@ public final class LibraryRepository: @unchecked Sendable {
             throw DecodingError.dataCorruptedError(in: value, debugDescription: "无法读取日期：\(text)")
         }
         var state = try decoder.decode(LibraryState.self, from: data)
-        // Older builds discard timetable exceptions when saving. Upgrade only
+        // Older builds cannot preserve plan attributes and occurrence exceptions. Upgrade only
         // the in-memory snapshot on read; the next successful mutation writes
-        // version 4, which those builds refuse to open.
-        if [1, 2, 3].contains(state.schemaVersion) { state.schemaVersion = 4 }
+        // version 5, which those builds refuse to open.
+        if [1, 2, 3, 4].contains(state.schemaVersion) { state.schemaVersion = 5 }
         return state
     }
 
@@ -105,6 +105,11 @@ public final class LibraryRepository: @unchecked Sendable {
             if let index = state.courses.firstIndex(where: { $0.id == course.id }) { state.courses[index] = course }
             else { state.courses.append(course) }
             for index in state.tasks.indices where state.tasks[index].courseID == course.id && !state.tasks[index].isArchived { state.tasks[index].courseNameSnapshot = course.name }
+            for index in state.tasks.indices where !state.tasks[index].isArchived {
+                for e in state.tasks[index].exceptions.indices where state.tasks[index].exceptions[e].details?.courseID == course.id {
+                    state.tasks[index].exceptions[e].details?.courseNameSnapshot = course.name
+                }
+            }
         }
     }
 
@@ -116,6 +121,14 @@ public final class LibraryRepository: @unchecked Sendable {
             for index in state.tasks.indices where state.tasks[index].courseID == id {
                 state.tasks[index].courseID = nil
                 if !state.tasks[index].isArchived || state.tasks[index].courseNameSnapshot == nil { state.tasks[index].courseNameSnapshot = course.name }
+            }
+            for index in state.tasks.indices {
+                for e in state.tasks[index].exceptions.indices where state.tasks[index].exceptions[e].details?.courseID == id {
+                    state.tasks[index].exceptions[e].details?.courseID = nil
+                    if !state.tasks[index].isArchived || state.tasks[index].exceptions[e].details?.courseNameSnapshot == nil {
+                        state.tasks[index].exceptions[e].details?.courseNameSnapshot = course.name
+                    }
+                }
             }
             for termIndex in state.timetableTerms.indices {
                 for meetingIndex in state.timetableTerms[termIndex].meetings.indices where state.timetableTerms[termIndex].meetings[meetingIndex].courseID == id {
@@ -174,7 +187,12 @@ public final class LibraryRepository: @unchecked Sendable {
     public func removeMaterials(ids: Set<UUID>) throws {
         try commit { state in
             state.materials.removeAll { ids.contains($0.id) }
-            for index in state.tasks.indices { state.tasks[index].materialIDs.removeAll { ids.contains($0) } }
+            for index in state.tasks.indices {
+                state.tasks[index].materialIDs.removeAll { ids.contains($0) }
+                for e in state.tasks[index].exceptions.indices {
+                    state.tasks[index].exceptions[e].details?.materialIDs.removeAll { ids.contains($0) }
+                }
+            }
         }
     }
     public func setFavorite(id: UUID, favorite: Bool) throws {
@@ -289,6 +307,10 @@ public final class LibraryRepository: @unchecked Sendable {
                 for var task in batch where !state.tasks.contains(where: { $0.id == task.id }) {
                     if let id = task.courseID, !courseIDs.contains(id) { task.courseID = nil }
                     task.materialIDs.removeAll { !materialIDs.contains($0) }
+                    for e in task.exceptions.indices {
+                        if let id = task.exceptions[e].details?.courseID, !courseIDs.contains(id) { task.exceptions[e].details?.courseID = nil }
+                        task.exceptions[e].details?.materialIDs.removeAll { !materialIDs.contains($0) }
+                    }
                     state.tasks.append(task)
                 }
             }
@@ -314,7 +336,7 @@ public final class LibraryRepository: @unchecked Sendable {
         if let id, !snapshot.courses.contains(where: { $0.id == id }) { throw LibraryError.missingRecord("课程") }
     }
     private func validate(_ state: LibraryState) throws {
-        guard state.schemaVersion == 4 else { throw LibraryError.invalidInput("不支持的资料库版本 \(state.schemaVersion)。") }
+        guard state.schemaVersion == 5 else { throw LibraryError.invalidInput("不支持的资料库版本 \(state.schemaVersion)。") }
         guard ["system", "light", "dark"].contains(state.appearance) else { throw LibraryError.invalidInput("未知的外观设置。") }
         guard ColorPalette.isStoredColor(state.accentColor) else { throw LibraryError.invalidInput("资料库包含无效的强调色。") }
         guard Set(state.courses.map(\.id)).count == state.courses.count,
@@ -335,14 +357,7 @@ public final class LibraryRepository: @unchecked Sendable {
             _ = try fileURL(for: material)
         }
         for task in state.tasks {
-            guard !task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw LibraryError.invalidInput("待办标题不能为空。") }
-            guard [task.startsAt, task.deadline, task.completedAt, task.archivedAt].compactMap({ $0 }).allSatisfy({ $0.timeIntervalSinceReferenceDate.isFinite }) else { throw LibraryError.invalidInput("待办包含无效日期。") }
-            if let completed = task.completedAt, completed < task.startsAt { throw LibraryError.invalidInput("完成时间不能早于待办开始时间。") }
-            if let archived = task.archivedAt {
-                guard let completed = task.completedAt, completed <= archived else { throw LibraryError.invalidInput("归档待办必须已完成，且完成时间不能晚于归档时间。") }
-            }
-            if let id = task.courseID, !courseIDs.contains(id) { throw LibraryError.invalidInput("待办关联的课程不存在。") }
-            guard task.materialIDs.allSatisfy(materialIDs.contains) else { throw LibraryError.invalidInput("待办关联的资料不存在。") }
+            try Self.validatePlan(task, courseIDs: courseIDs, materialIDs: materialIDs)
         }
         try validateTimetables(state.timetableTerms, courseIDs: courseIDs)
     }
@@ -451,11 +466,13 @@ extension LibraryRepository {
             let courseIDs = Set(state.courses.map(\.id))
             var oldCourseIDs: [TimetableCourseKey: UUID] = [:]
             var oldSessionIDs: [TimetableMeeting: UUID] = [:]
+            var oldMonthFlags: [TimetableMeeting: Bool?] = [:]
             for meeting in term.meetings {
                 if let id = meeting.courseID, courseIDs.contains(id) {
                     oldCourseIDs[TimetableCourseKey(code: meeting.courseCode, title: meeting.title, teacher: meeting.teacher)] = id
                 }
                 oldSessionIDs[Self.timetableSessionKey(meeting)] = meeting.id
+                oldMonthFlags[Self.timetableSessionKey(meeting)] = .some(meeting.showInMonth)
             }
             var importedCourseIDs: [TimetableCourseKey: UUID] = [:]
             var sessions = Set<TimetableMeeting>()
@@ -493,6 +510,14 @@ extension LibraryRepository {
                 let sessionKey = Self.timetableSessionKey(meeting)
                 guard sessions.insert(sessionKey).inserted else { continue }
                 meeting.id = oldSessionIDs[sessionKey] ?? meeting.id
+                meeting.showInMonth = oldMonthFlags[sessionKey] ?? nil
+                if oldMonthFlags[sessionKey] == nil {
+                    let oldSlots = term.meetings.filter {
+                        $0.courseID == meeting.courseID && $0.weekday == meeting.weekday &&
+                        $0.startSection == meeting.startSection && $0.sectionCount == meeting.sectionCount
+                    }
+                    if oldSlots.count == 1 { meeting.showInMonth = oldSlots[0].showInMonth }
+                }
                 meetings.append(meeting)
             }
             term.cancellations = Self.remapTimetableCancellations(term.cancellations, oldMeetings: term.meetings, newMeetings: meetings)
@@ -764,6 +789,7 @@ extension LibraryRepository {
         var key = meeting
         key.id = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
         key.courseID = nil
+        key.showInMonth = nil
         return key
     }
 
@@ -1066,5 +1092,256 @@ extension LibraryRepository {
         }
         try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         return false
+    }
+}
+
+extension LibraryRepository {
+    /// Restores only changed records; unrelated later edits remain intact.
+    public func restorePlanChanges(before: [StudyTask], after: [StudyTask]) throws {
+        try commit { state in
+            let ids = Set(before.map(\.id)).union(after.map(\.id))
+            guard Set(before.map(\.id)).count == before.count, Set(after.map(\.id)).count == after.count else {
+                throw LibraryError.invalidInput("撤销记录包含重复计划。")
+            }
+            let expected = Dictionary(uniqueKeysWithValues: after.map { ($0.id, $0) })
+            let current = Dictionary(uniqueKeysWithValues: state.tasks.filter { ids.contains($0.id) }.map { ($0.id, $0) })
+            guard current == expected else { throw LibraryError.invalidInput("这些计划后来已被修改，无法撤销。") }
+            state.tasks.removeAll { ids.contains($0.id) }
+            state.tasks.append(contentsOf: before)
+        }
+    }
+
+    public func movePlanOccurrence(id: UUID, originalDate: Date, isDeadline: Bool, to date: Date) throws {
+        try commit { state in
+            let index = try Self.editablePlanIndex(id, in: state)
+            let parent = state.tasks[index]
+            try Self.requireOccurrence(originalDate, of: parent)
+            let current = PlanCalendar.snapshot(of: parent, originalDate: originalDate)
+            guard date.timeIntervalSinceReferenceDate.isFinite else { throw LibraryError.invalidInput("计划时间无效。") }
+            if isDeadline {
+                guard current.deadline != nil else { throw LibraryError.invalidInput("该计划没有截止时间。") }
+                if parent.repeatRule == nil { state.tasks[index].deadline = date }
+                else { Self.editException(in: &state.tasks[index], on: originalDate) { $0.deadline = date } }
+            } else {
+                guard current.hasExecutionTime else { throw LibraryError.invalidInput("该计划尚未安排执行时间。") }
+                let end = current.endsAt.map { date.addingTimeInterval($0.timeIntervalSince(current.startsAt)) }
+                if parent.repeatRule == nil { state.tasks[index].startsAt = date; state.tasks[index].endsAt = end }
+                else { Self.editException(in: &state.tasks[index], on: originalDate) { $0.startsAt = date; $0.endsAt = end } }
+            }
+        }
+    }
+
+    public func setPlanOccurrenceCompleted(id: UUID, originalDate: Date, completed: Bool) throws {
+        try commit { state in
+            let index = try Self.editablePlanIndex(id, in: state), parent = state.tasks[index]
+            try Self.requireOccurrence(originalDate, of: parent)
+            if parent.repeatRule == nil { state.tasks[index].completedAt = completed ? (parent.completedAt ?? Date()) : nil }
+            else {
+                Self.editException(in: &state.tasks[index], on: originalDate) {
+                    $0.completedAt = completed ? ($0.completedAt ?? Date()) : nil
+                    $0.completedOverride = completed
+                }
+            }
+        }
+    }
+
+    public func setPlanOccurrenceCancelled(id: UUID, originalDate: Date, cancelled: Bool) throws {
+        try commit { state in
+            let index = try Self.editablePlanIndex(id, in: state), parent = state.tasks[index]
+            try Self.requireOccurrence(originalDate, of: parent)
+            if parent.repeatRule == nil { state.tasks[index].cancelledAt = cancelled ? (parent.cancelledAt ?? Date()) : nil }
+            else {
+                guard parent.cancelledAt == nil else { throw LibraryError.invalidInput("整组计划已取消，请先恢复整组。") }
+                Self.editException(in: &state.tasks[index], on: originalDate) { $0.cancelledAt = cancelled ? ($0.cancelledAt ?? Date()) : nil }
+            }
+        }
+    }
+
+    /// Clears one occurrence's overrides, restoring its original arrangement.
+    public func restorePlanOccurrence(id: UUID, originalDate: Date) throws {
+        try commit { state in
+            let index = try Self.editablePlanIndex(id, in: state)
+            try Self.requireOccurrence(originalDate, of: state.tasks[index])
+            if state.tasks[index].repeatRule == nil {
+                state.tasks[index].cancelledAt = nil; state.tasks[index].completedAt = nil
+            } else { state.tasks[index].exceptions.removeAll { $0.originalDate == originalDate } }
+        }
+    }
+
+    public func savePlan(_ task: StudyTask, originalDate: Date? = nil, scope: PlanEditScope = .all) throws {
+        if scope == .all {
+            try commit { state in
+                var replacement = Self.normalizedPlan(task, in: state)
+                if let index = state.tasks.firstIndex(where: { $0.id == task.id }) {
+                    guard !state.tasks[index].isArchived else { throw LibraryError.invalidInput("归档计划为只读，请先恢复。") }
+                    let previous = state.tasks[index]
+                    replacement.exceptions = Self.remappedPlanExceptions(task.exceptions, from: previous, to: task)
+                    if previous.deadline != nil && task.deadline == nil {
+                        for e in replacement.exceptions.indices {
+                            replacement.exceptions[e].deadline = nil
+                            replacement.exceptions[e].details?.deadline = nil
+                        }
+                    }
+                    if previous.hasExecutionTime && !task.hasExecutionTime {
+                        for e in replacement.exceptions.indices {
+                            replacement.exceptions[e].startsAt = nil; replacement.exceptions[e].endsAt = nil
+                            replacement.exceptions[e].details?.hasExecutionTime = false
+                        }
+                    }
+                    state.tasks[index] = replacement
+                } else { state.tasks.append(replacement) }
+            }
+            return
+        }
+        try commit { state in
+            let index = try Self.editablePlanIndex(task.id, in: state), parent = state.tasks[index]
+            guard let originalDate else { throw LibraryError.invalidInput("请选择要调整的这次计划。") }
+            try Self.requireOccurrence(originalDate, of: parent)
+            guard parent.repeatRule != nil else {
+                var replacement = task; replacement.id = parent.id; replacement.exceptions = []
+                state.tasks[index] = Self.normalizedPlan(replacement, in: state); return
+            }
+            if scope == .thisOccurrence {
+                var nominal = parent; nominal.exceptions = []
+                let base = PlanCalendar.snapshot(of: nominal, originalDate: originalDate)
+                var details = PlanDetails(Self.normalizedPlan(task, in: state), comparedTo: base)
+                details.materialIDs = Array(Set(details.materialIDs)).sorted { $0.uuidString < $1.uuidString }
+                Self.editException(in: &state.tasks[index], on: originalDate) {
+                    $0.details = details; $0.startsAt = nil; $0.endsAt = nil; $0.deadline = nil; $0.location = nil
+                    $0.completedAt = task.completedAt; $0.cancelledAt = task.cancelledAt
+                    $0.completedOverride = task.completedAt != base.completedAt ? task.completedAt != nil : nil
+                }
+            } else {
+                let base = PlanCalendar.anchor(for: parent)
+                if originalDate == base {
+                    var replacement = task; replacement.id = parent.id
+                    replacement = Self.normalizedPlan(replacement, in: state)
+                    replacement.exceptions = Self.remappedPlanExceptions(parent.exceptions.filter { $0.originalDate != originalDate }, from: parent, to: replacement)
+                    state.tasks[index] = replacement
+                } else {
+                    var future = Self.normalizedPlan(task, in: state)
+                    future.id = UUID(); future.exceptions = []
+                    if let oldRule = parent.repeatRule, let newRule = future.repeatRule {
+                        let sourceIndex = PlanCalendar.indexNear(originalDate, base: base, rule: oldRule)
+                        let newBase = PlanCalendar.anchor(for: future)
+                        for old in parent.exceptions where old.originalDate > originalDate {
+                            let offset = PlanCalendar.indexNear(old.originalDate, base: base, rule: oldRule) - sourceIndex
+                            guard let newOriginal = PlanCalendar.occurrenceDate(index: offset, base: newBase, rule: newRule), PlanCalendar.isOccurrenceAnchor(newOriginal, for: future) else { continue }
+                            var remapped = old; remapped.originalDate = newOriginal
+                            future.exceptions.append(remapped)
+                        }
+                    }
+                    Self.truncatePlan(&state.tasks[index], before: originalDate)
+                    state.tasks.append(future)
+                }
+            }
+        }
+    }
+
+    public func cancelPlan(id: UUID, originalDate: Date? = nil, scope: PlanEditScope = .all) throws {
+        guard scope == .all || originalDate != nil else { throw LibraryError.invalidInput("请选择要取消的这次计划。") }
+        if scope == .thisOccurrence, let originalDate { try setPlanOccurrenceCancelled(id: id, originalDate: originalDate, cancelled: true); return }
+        try commit { state in
+            let index = try Self.editablePlanIndex(id, in: state)
+            if scope == .thisAndFuture, let originalDate, state.tasks[index].repeatRule != nil {
+                try Self.requireOccurrence(originalDate, of: state.tasks[index])
+                if originalDate == PlanCalendar.anchor(for: state.tasks[index]) { state.tasks[index].cancelledAt = Date() }
+                else {
+                    let parent = state.tasks[index]
+                    var nominal = parent; nominal.exceptions = []
+                    var future = PlanCalendar.snapshot(of: nominal, originalDate: originalDate)
+                    future.id = UUID(); future.cancelledAt = Date()
+                    future.exceptions = []
+                    if let rule = parent.repeatRule {
+                        let sourceIndex = PlanCalendar.indexNear(originalDate, base: PlanCalendar.anchor(for: parent), rule: rule)
+                        for old in parent.exceptions where old.originalDate >= originalDate {
+                            let offset = PlanCalendar.indexNear(old.originalDate, base: PlanCalendar.anchor(for: parent), rule: rule) - sourceIndex
+                            if let next = PlanCalendar.occurrenceDate(index: offset, base: PlanCalendar.anchor(for: future), rule: rule) {
+                                var copy = old; copy.originalDate = next; future.exceptions.append(copy)
+                            }
+                        }
+                    }
+                    Self.truncatePlan(&state.tasks[index], before: originalDate)
+                    state.tasks.append(future)
+                }
+            } else { state.tasks[index].cancelledAt = Date() }
+        }
+    }
+
+    public func deletePlan(id: UUID, originalDate: Date? = nil, scope: PlanEditScope = .all) throws {
+        guard scope == .all || originalDate != nil else { throw LibraryError.invalidInput("请选择要移除的这次计划。") }
+        if scope == .all { try deleteTasks(ids: [id]); return }
+        if scope == .thisOccurrence, let originalDate { try setPlanOccurrenceCancelled(id: id, originalDate: originalDate, cancelled: true); return }
+        try commit { state in
+            let index = try Self.editablePlanIndex(id, in: state)
+            guard let originalDate else { throw LibraryError.invalidInput("请选择要移除的这次计划。") }
+            try Self.requireOccurrence(originalDate, of: state.tasks[index])
+            if state.tasks[index].repeatRule == nil || originalDate == PlanCalendar.anchor(for: state.tasks[index]) { state.tasks.remove(at: index) }
+            else { Self.truncatePlan(&state.tasks[index], before: originalDate) }
+        }
+    }
+
+    private static func editablePlanIndex(_ id: UUID, in state: LibraryState) throws -> Int {
+        guard let index = state.tasks.firstIndex(where: { $0.id == id }) else { throw LibraryError.missingRecord("计划") }
+        guard !state.tasks[index].isArchived else { throw LibraryError.invalidInput("归档计划为只读，请先恢复。") }
+        return index
+    }
+    private static func requireOccurrence(_ date: Date, of plan: StudyTask) throws {
+        guard PlanCalendar.isOccurrenceAnchor(date, for: plan) else { throw LibraryError.invalidInput("找不到该次计划，重复规则可能已经改变。") }
+    }
+    private static func normalizedPlan(_ plan: StudyTask, in state: LibraryState) -> StudyTask {
+        var result = plan
+        result.materialIDs = Array(Set(result.materialIDs)).sorted { $0.uuidString < $1.uuidString }
+        if let id = result.courseID { result.courseNameSnapshot = state.courses.first { $0.id == id }?.name }
+        return result
+    }
+    private static func editException(in plan: inout StudyTask, on date: Date, _ action: (inout PlanException) -> Void) {
+        let index = plan.exceptions.firstIndex { $0.originalDate == date }
+        var exception = index.map { plan.exceptions[$0] } ?? PlanException(originalDate: date)
+        action(&exception)
+        if let index { plan.exceptions[index] = exception } else { plan.exceptions.append(exception) }
+        plan.exceptions.sort { $0.originalDate < $1.originalDate }
+    }
+    private static func truncatePlan(_ plan: inout StudyTask, before date: Date) {
+        plan.repeatRule?.until = PlanCalendar.calendar.date(byAdding: .day, value: -1, to: PlanCalendar.calendar.startOfDay(for: date))
+        plan.exceptions.removeAll { $0.originalDate >= date }
+    }
+}
+
+extension LibraryRepository {
+    private static func remappedPlanExceptions(_ exceptions: [PlanException], from old: StudyTask, to new: StudyTask) -> [PlanException] {
+        guard let oldRule = old.repeatRule, let newRule = new.repeatRule else { return [] }
+        let oldBase = PlanCalendar.anchor(for: old), newBase = PlanCalendar.anchor(for: new)
+        return exceptions.compactMap { exception in
+            let index = PlanCalendar.indexNear(exception.originalDate, base: oldBase, rule: oldRule)
+            guard let date = PlanCalendar.occurrenceDate(index: index, base: newBase, rule: newRule), PlanCalendar.isOccurrenceAnchor(date, for: new) else { return nil }
+            var copy = exception; copy.originalDate = date
+            return copy
+        }
+    }
+    private static func validatePlan(_ task: StudyTask, courseIDs: Set<UUID>, materialIDs: Set<UUID>) throws {
+        guard !task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw LibraryError.invalidInput("计划名称不能为空。") }
+        guard [task.startsAt, task.endsAt, task.deadline, task.completedAt, task.archivedAt, task.cancelledAt, task.repeatRule?.until].compactMap({ $0 }).allSatisfy({ $0.timeIntervalSinceReferenceDate.isFinite }) else {
+            throw LibraryError.invalidInput("计划包含无效日期。")
+        }
+        if task.hasExecutionTime, let end = task.endsAt {
+            guard end >= task.startsAt, end.timeIntervalSince(task.startsAt) <= 3660 * 86400 else { throw LibraryError.invalidInput("执行结束时间须在开始之后，且跨度不能超过十年。") }
+        }
+        if let archived = task.archivedAt {
+            guard let completed = task.completedAt, completed <= archived else { throw LibraryError.invalidInput("归档计划必须已完成，且完成时间不能晚于归档时间。") }
+        }
+        if let id = task.courseID, !courseIDs.contains(id) { throw LibraryError.invalidInput("计划关联的课程不存在。") }
+        guard task.materialIDs.allSatisfy(materialIDs.contains) else { throw LibraryError.invalidInput("计划关联的资料不存在。") }
+        if let rule = task.repeatRule {
+            guard (1...366).contains(rule.interval), task.hasExecutionTime || task.deadline != nil else { throw LibraryError.invalidInput("重复间隔须为1至366，且需要执行时间或截止时间。") }
+            if let until = rule.until, PlanCalendar.calendar.startOfDay(for: until) < PlanCalendar.calendar.startOfDay(for: PlanCalendar.anchor(for: task)) { throw LibraryError.invalidInput("重复结束日期不能早于首次安排。") }
+        } else if !task.exceptions.isEmpty { throw LibraryError.invalidInput("非重复计划不能包含单次例外。") }
+        guard task.exceptions.count <= 10_000, Set(task.exceptions.map(\.originalDate)).count == task.exceptions.count else { throw LibraryError.invalidInput("重复计划例外过多或包含重复日期。") }
+        for exception in task.exceptions {
+            guard [exception.originalDate, exception.startsAt, exception.endsAt, exception.deadline, exception.completedAt, exception.cancelledAt].compactMap({ $0 }).allSatisfy({ $0.timeIntervalSinceReferenceDate.isFinite }), PlanCalendar.isOccurrenceAnchor(exception.originalDate, for: task) else { throw LibraryError.invalidInput("计划的单次调整不属于当前重复规则。") }
+            var effective = PlanCalendar.snapshot(of: task, originalDate: exception.originalDate)
+            effective.repeatRule = nil; effective.exceptions = []; effective.archivedAt = nil
+            try validatePlan(effective, courseIDs: courseIDs, materialIDs: materialIDs)
+        }
     }
 }

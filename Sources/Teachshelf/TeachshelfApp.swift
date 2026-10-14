@@ -32,7 +32,7 @@ import AppKit
                 Button("收藏 / 取消收藏") { if let m = store.selectedMaterial { store.favorite(m) } }
                 Button("移除所选记录…") { store.removeMaterials(store.selectedMaterialIDs) }.disabled(store.selectedMaterialIDs.isEmpty)
                 Divider()
-                Button("撤销待办删除") { store.undoTaskDeletion() }.keyboardShortcut("z", modifiers: [.command, .option]).disabled(!store.canUndoTaskDeletion)
+                Button("撤销计划删除") { store.undoTaskDeletion() }.keyboardShortcut("z", modifiers: [.command, .option]).disabled(!store.canUndoTaskDeletion)
             }
         }
         Settings {

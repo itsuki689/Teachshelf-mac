@@ -8,11 +8,16 @@ enum ScheduleMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .month: return "月历"
-        case .week: return "周课表"
-        case .agenda: return "议程"
+        case .month: return "月"
+        case .week: return "周"
+        case .agenda: return "日"
         }
     }
+}
+
+enum SchedulePlanFilter: String, CaseIterable, Identifiable {
+    case all = "全部计划", pending = "待完成", unplanned = "待安排", completed = "已完成", cancelled = "已取消"
+    var id: String { rawValue }
 }
 
 /// One civil date drives every schedule view. Academic weeks without a start
@@ -26,6 +31,7 @@ final class ScheduleSelection: ObservableObject {
     @Published var mode: ScheduleMode
     @Published var showsCourses = true
     @Published var showsTasks = true
+    @Published var planFilter: SchedulePlanFilter = .all
 
     private var calendar: Calendar { TimetableTerm.academicCalendar }
 
@@ -70,7 +76,7 @@ final class ScheduleSelection: ObservableObject {
             setWeek(shifted.overflow ? (offset > 0 ? Int.max : Int.min) : shifted.partialValue, in: state)
             return
         }
-        let component: Calendar.Component = mode == .month ? .month : .weekOfYear
+        let component: Calendar.Component = mode == .month ? .month : (mode == .agenda ? .day : .weekOfYear)
         if let date = calendar.date(byAdding: component, value: offset, to: selectedDate) { setDate(date) }
     }
 
@@ -153,7 +159,7 @@ enum ScheduleData {
     }
 
     static func agendaDays(selection: ScheduleSelection) -> [Date] {
-        (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: selection.selectedDate) }
+        [selection.selectedDate]
     }
 
     /// These are explicitly undated items, never events projected onto a day.

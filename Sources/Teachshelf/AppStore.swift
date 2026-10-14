@@ -16,6 +16,14 @@ private struct TimetableUndo {
     let label: String
 }
 
+private struct PlanUndo {
+    let root: URL
+    let before: [StudyTask]
+    let after: [StudyTask]
+    let label: String
+    var ids: Set<UUID> { Set((before + after).map(\.id)) }
+}
+
 @MainActor final class AppStore: ObservableObject {
     @Published var state: LibraryState
     @Published var repository: LibraryRepository
@@ -40,6 +48,7 @@ private struct TimetableUndo {
     @Published private(set) var accentPreviewID: UUID?
     let scheduleSelection = ScheduleSelection()
     @Published private var timetableUndo: TimetableUndo?
+    @Published private var planUndo: PlanUndo?
     private let remembersLocation: Bool
     var beforeLeavingMaterial: (() -> Bool)?
 
@@ -50,6 +59,40 @@ private struct TimetableUndo {
         return state.timetableTerms.first(where: { $0.id == undo.before.id }) == undo.after
     }
     var timetableUndoLabel: String? { canUndoTimetableChange ? timetableUndo?.label : nil }
+
+    var canUndoPlanChange: Bool {
+        guard let undo = planUndo, undo.root == repository.root else { return false }
+        return Set(state.tasks.filter { undo.ids.contains($0.id) }) == Set(undo.after)
+    }
+    var planUndoLabel: String? { canUndoPlanChange ? planUndo?.label : nil }
+
+    @discardableResult
+    func changePlan(id: UUID, label: String, action: (LibraryRepository) throws -> Void) -> Bool {
+        guard !isBusy else { return false }
+        let before = state.tasks
+        do {
+            try action(repository)
+            reload()
+            let ids = Set((before + state.tasks).map(\.id)).filter { id in
+                before.first { $0.id == id } != state.tasks.first { $0.id == id }
+            }
+            if !ids.isEmpty {
+                planUndo = PlanUndo(root: repository.root, before: before.filter { ids.contains($0.id) },
+                                    after: state.tasks.filter { ids.contains($0.id) }, label: label)
+            }
+            status = label
+            return true
+        } catch { report(error); return false }
+    }
+
+    func undoPlanChange() {
+        guard !isBusy, canUndoPlanChange, let undo = planUndo else { return }
+        do {
+            try repository.restorePlanChanges(before: undo.before, after: undo.after)
+            planUndo = nil
+            reload(); status = "已撤销\(undo.label)"
+        } catch { report(error) }
+    }
 
     @discardableResult
     func changeTimetable(termID: UUID, label: String, action: (LibraryRepository) throws -> Void) -> Bool {
@@ -101,6 +144,11 @@ private struct TimetableUndo {
     }
 
     func navigate(to destination: SidebarSelection?) {
+        if destination == .tasks {
+            scheduleSelection.planFilter = .pending
+            navigate(to: .schedule)
+            return
+        }
         guard destination != navigation else { return }
         guard beforeLeavingMaterial?() != false else { return }
         if case .course(let id) = destination {
@@ -156,7 +204,13 @@ private struct TimetableUndo {
 
     var currentCourseID: UUID? { if case .course(let id) = navigation { return id }; return nil }
     var selectedMaterial: MaterialRecord? { state.materials.first { selectedMaterialIDs.contains($0.id) } }
-    var pendingTaskCount: Int { state.tasks.filter { !$0.isCompleted && !$0.isArchived }.count }
+    var pendingTaskCount: Int {
+        state.tasks.filter { parent in
+            guard !parent.isArchived, !parent.isCancelled else { return false }
+            let variants = [parent] + parent.exceptions.map { PlanCalendar.snapshot(of: parent, originalDate: $0.originalDate) }
+            return variants.contains { $0.completionRequired && !$0.isCompleted && !$0.isCancelled }
+        }.count
+    }
     var categories: [String] { Array(Set(["课件", "教材", "笔记", "参考资料", "其他"] + state.customCategories + state.materials.map(\.category))).sorted() }
     var fileTypes: [String] { ["全部格式"] + Array(Set(["PDF", "文档", "演示文稿", "表格", "图片"] + state.materials.map(\.fileType))).sorted() }
     var semesters: [String] { ["全部学期"] + Array(Set(state.courses.map(\.semester).filter { !$0.isEmpty })).sorted().reversed() }
@@ -173,8 +227,8 @@ private struct TimetableUndo {
         case .unassigned: return "未分类"
         case .course(let id): return courseName(id)
         case .homework: return "作业文件夹"
-        case .tasks: return "待办"
-        case .schedule: return "日程"
+        case .tasks: return "待完成计划"
+        case .schedule: return "计划"
         case .settings: return "设置"
         default: return "全部资料"
         }

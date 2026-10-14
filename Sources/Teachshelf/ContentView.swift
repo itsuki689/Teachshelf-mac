@@ -76,12 +76,12 @@ struct ContentView: View {
                 libraryShortcut("最近打开", "clock", .recent, hint: "最近打开")
                 libraryShortcut("未分类", "tray", .unassigned, hint: "未分类资料")
                 libraryShortcut("作业文件夹", "folder", .homework, hint: "作业文件夹")
-                libraryShortcut("待办", "checklist", .tasks, hint: "待办 · \(store.pendingTaskCount) 项未完成")
+                libraryShortcut("待完成计划", "checklist", .tasks, hint: "待完成计划 · \(store.pendingTaskCount) 项")
             }.padding(.horizontal, 14).padding(.bottom, 12)
                 .accessibilityElement(children: .contain).accessibilityLabel("快捷入口")
 
             VStack(spacing: 3) {
-                navRow("日程", "calendar", .schedule)
+                navRow("计划", "calendar", .schedule)
             }.padding(.horizontal, 14)
             Divider().padding(.horizontal, 20).padding(.vertical, 15)
             HStack {
@@ -125,12 +125,14 @@ struct ContentView: View {
     }
     private func navRow(_ title: String, _ symbol: String, _ selection: SidebarSelection, count: Int? = nil) -> some View {
         SidebarDestinationButton(title: title, symbol: symbol, selected: store.navigation == selection, count: count) {
+            if selection == .schedule { store.scheduleSelection.planFilter = .all }
             store.navigate(to: selection)
         }
     }
 
     private func libraryShortcut(_ title: String, _ symbol: String, _ selection: SidebarSelection, hint: String) -> some View {
-        LibraryShortcut(title: title, symbol: symbol, selected: store.navigation == selection, hint: hint) {
+        LibraryShortcut(title: title, symbol: symbol, selected: store.navigation == selection ||
+                        (selection == .tasks && store.navigation == .schedule && store.scheduleSelection.planFilter == .pending), hint: hint) {
             store.navigate(to: selection)
         }
     }
