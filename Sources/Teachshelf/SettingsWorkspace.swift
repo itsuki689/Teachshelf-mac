@@ -14,7 +14,7 @@ struct SettingsWorkspace: View {
                     Image(systemName: "books.vertical.fill").font(.system(size: 32)).foregroundStyle(theme.ink)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("你的学习空间").font(.system(size: 26, weight: .bold, design: .rounded))
-                        Text("Teachshelf for macOS · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.4.0")").font(.callout).foregroundStyle(.secondary)
+                        Text("Teachshelf for macOS · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.4.1")").font(.callout).foregroundStyle(.secondary)
                     }
                 }.padding(.bottom, 4)
                 settingsCard("外观", symbol: "paintpalette") {

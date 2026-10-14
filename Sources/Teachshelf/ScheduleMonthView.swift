@@ -5,9 +5,6 @@ struct ScheduleMonthView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.appTheme) private var theme
     @ObservedObject var selection: ScheduleSelection
-    let onMeeting: (ScheduleMeetingContext) -> Void
-    let onTask: (StudyTask) -> Void
-    let onCreateTask: (Date) -> Void
     private let calendar = TimetableCalendar.calendar
     private let weekdays = ["一", "二", "三", "四", "五", "六", "日"]
 
@@ -19,70 +16,21 @@ struct ScheduleMonthView: View {
     }
 
     var body: some View {
-        WorkspaceSplitView {
-            VStack(spacing: 0) {
-                HStack(spacing: 0) {
-                    ForEach(weekdays, id: \.self) { weekday in
-                        Text(weekday).font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity).padding(.vertical, 13)
-                    }
-                }
-                GeometryReader { geometry in
-                    let rowHeight = max(83, geometry.size.height / 6)
-                    let compact = (geometry.size.width - 6) / 7 < 84
-                    ScrollView {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 1), count: 7), spacing: 1) {
-                            ForEach(days, id: \.self) { day in dayCell(day, height: rowHeight - 1, compact: compact) }
-                        }.background(Color.primary.opacity(0.07))
-                    }
-                }
-            }.frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
-            selectedDayAgenda.frame(minWidth: 240, idealWidth: 280, maxWidth: 340, maxHeight: .infinity)
-        }
-    }
-
-    private var selectedDayAgenda: some View {
-        let classes = classes(on: selection.selectedDate)
-        let tasks = tasks(on: selection.selectedDate)
-        return VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: 8) {
-                    Text(TimetableCalendar.formatted(selection.selectedDate, template: "MMM d EEEE"))
-                        .font(.title3.weight(.semibold))
-                    Spacer(minLength: 0)
-                    Button { onCreateTask(selection.selectedDate) } label: { Image(systemName: "plus") }
-                        .buttonStyle(.borderless).help("在这一天新建待办")
-                        .accessibilityLabel("在所选日期新建待办")
-                }
-                Text("\(classes.count) 次课 · \(tasks.count) 项待办").font(.caption).foregroundStyle(.secondary)
-            }.padding(20)
-            Divider()
-            if classes.isEmpty && tasks.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "sun.max").font(.system(size: 34)).foregroundStyle(.tertiary)
-                    Text("这一天还没有安排").foregroundStyle(.secondary)
-                    Button("添加待办") { onCreateTask(selection.selectedDate) }.buttonStyle(.bordered)
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        if !classes.isEmpty {
-                            Label("课程", systemImage: "books.vertical")
-                                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                            ForEach(classes) { event in
-                                ScheduleClassCard(event: event) { openMeeting(event) }
-                            }
-                        }
-                        if !tasks.isEmpty {
-                            Label("待办", systemImage: "checklist")
-                                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                .padding(.top, classes.isEmpty ? 0 : 8)
-                            ForEach(tasks) { task in ScheduleTaskCard(task: task) { onTask(task) } }
-                        }
-                    }.padding(18)
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                ForEach(weekdays, id: \.self) { weekday in
+                    Text(weekday).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity).frame(height: 42)
                 }
             }
-        }
+            GeometryReader { geometry in
+                let rowHeight = max(1, (geometry.size.height - 5) / 6)
+                let compact = (geometry.size.width - 6) / 7 < 84
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 1), count: 7), spacing: 1) {
+                    ForEach(days, id: \.self) { day in dayCell(day, height: rowHeight, compact: compact) }
+                }.background(Color.primary.opacity(0.07))
+            }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func tasks(on day: Date) -> [StudyTask] {
@@ -91,12 +39,6 @@ struct ScheduleMonthView: View {
 
     private func classes(on day: Date) -> [TimetableCalendar.DayClass] {
         ScheduleData.classes(on: day, in: store.state, selection: selection)
-    }
-
-    private func openMeeting(_ event: TimetableCalendar.DayClass) {
-        guard let term = store.state.timetableTerms.first(where: { $0.id == event.termID }) else { return }
-        onMeeting(ScheduleMeetingContext(term: term, meeting: event.meeting, date: event.day,
-                                        selectedDate: selection.selectedDate, originalDate: event.originalDate))
     }
 
     private func dayCell(_ day: Date, height: CGFloat, compact: Bool) -> some View {
