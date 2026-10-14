@@ -16,6 +16,12 @@ struct ScheduleWeekTimeline {
     let times: [TimetableSectionTime]
     let segments: [Segment]
 
+    /// Both sides of each teaching period are visible grid boundaries. In
+    /// particular, the final end is also the start of the night region.
+    var gridMinutes: [Int] {
+        Array(Set(times.flatMap { [$0.startMinute, $0.endMinute] })).sorted()
+    }
+
     init(height: CGFloat, sectionCount: Int, times supplied: [TimetableSectionTime]) {
         let resolvedHeight = height.isFinite ? max(0, height) : 0
         self.height = resolvedHeight
@@ -75,8 +81,16 @@ struct ScheduleWeekTimeline {
     func sectionRect(start: Int, count: Int) -> CGRect? {
         guard let first = times.first(where: { $0.section == start }),
               let last = times.first(where: { $0.section == start + count - 1 }) else { return nil }
-        let top = y(for: Double(first.startMinute)), bottom = y(for: Double(last.endMinute))
-        return CGRect(x: 0, y: top, width: 0, height: max(1, bottom - top))
+        return intervalRect(start: Double(first.startMinute), end: Double(last.endMinute))
+    }
+
+    /// Cards and their previews use the same coordinates as the clock ticks.
+    /// A compact card may grow downward for readability, but never moves its
+    /// start upward to make room near midnight.
+    func intervalRect(start: Double, end: Double, minimumHeight: CGFloat = 0) -> CGRect {
+        let top = y(for: start), bottom = y(for: max(start, end))
+        return CGRect(x: 0, y: top, width: 0,
+                      height: min(max(0, height - top), max(minimumHeight, bottom - top)))
     }
 
     func section(at y: CGFloat, duration: Int) -> Int? {

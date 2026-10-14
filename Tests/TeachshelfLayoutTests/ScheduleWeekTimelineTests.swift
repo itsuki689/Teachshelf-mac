@@ -52,4 +52,32 @@ struct ScheduleWeekTimelineTests {
         #expect(course.laneCount == 2 && lunch.laneCount == 2)
         #expect(lanes.first { $0.id == "next" }?.laneCount == 1)
     }
+
+    @Test func courseAndActivityBoundsShareEveryVisibleClockBoundary() throws {
+        for height: CGFloat in [468, 588] {
+            let timeline = ScheduleWeekTimeline(height: height, sectionCount: 11,
+                times: UndergraduateTimetableDefaults.sectionTimes)
+            for time in timeline.times {
+                let course = try #require(timeline.sectionRect(start: time.section, count: 1))
+                let activity = timeline.intervalRect(start: Double(time.startMinute), end: Double(time.endMinute), minimumHeight: 13)
+                #expect(course == activity)
+                #expect(timeline.gridMinutes.contains(time.startMinute))
+                #expect(timeline.gridMinutes.contains(time.endMinute))
+                #expect(course.minY == timeline.y(for: Double(time.startMinute)))
+                #expect(abs(course.maxY - timeline.y(for: Double(time.endMinute))) < 0.001)
+            }
+            let last = try #require(timeline.sectionRect(start: 11, count: 1))
+            #expect(timeline.gridMinutes.last == 1280) // 21:20 separates period 11 and night.
+            #expect(abs(last.maxY - timeline.y(for: 1280)) < 0.001)
+            #expect(last.maxY < height)
+        }
+    }
+
+    @Test func compactNightCardsKeepTheirActualStartWhenSpaceBelowIsShort() {
+        let timeline = ScheduleWeekTimeline(height: 468, sectionCount: 11, times: [])
+        let card = timeline.intervalRect(start: 1425, end: 1440, minimumHeight: 13)
+        #expect(card.minY == timeline.y(for: 1425))
+        #expect(card.height > 0 && card.height < 13)
+        #expect(abs(card.maxY - timeline.height) < 0.001)
+    }
 }

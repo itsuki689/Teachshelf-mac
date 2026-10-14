@@ -189,6 +189,16 @@ struct ScheduleWeekView: View {
 
     private func gridBackground(_ metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> some View {
         ZStack(alignment: .topLeading) {
+            // Tint compressed breaks so a card ending at the end-of-period
+            // rule cannot be mistaken for an incorrectly shortened card.
+            ForEach(Array(timeline.segments.enumerated()), id: \.offset) { _, segment in
+                if !timeline.times.contains(where: { Double($0.startMinute) <= segment.start && Double($0.endMinute) >= segment.end }) {
+                    Rectangle().fill(Color.primary.opacity(0.018))
+                        .frame(width: metrics.labelWidth + metrics.columnWidth * 7,
+                               height: max(0, segment.upper - segment.lower))
+                        .offset(y: segment.lower)
+                }
+            }
             ForEach(0..<7, id: \.self) { index in
                 if let date = dayDate(index), calendar.isDate(date, inSameDayAs: selection.selectedDate) {
                     Rectangle().fill(theme.ink.opacity(0.025))
@@ -196,26 +206,34 @@ struct ScheduleWeekView: View {
                         .offset(x: metrics.labelWidth + CGFloat(index) * metrics.columnWidth)
                 }
             }
+            ForEach(timeline.gridMinutes, id: \.self) { minute in
+                let isStart = timeline.times.contains { $0.startMinute == minute }
+                Rectangle().fill(Color.primary.opacity(isStart ? 0.09 : 0.065))
+                    .frame(width: metrics.labelWidth + metrics.columnWidth * 7, height: 0.7)
+                    .offset(y: timeline.y(for: Double(minute)))
+            }
             ForEach(timeline.times, id: \.section) { time in
                 let top = timeline.y(for: Double(time.startMinute))
                 let bottom = timeline.y(for: Double(time.endMinute))
-                VStack(spacing: 1) {
-                    Text("第 \(time.section) 节").font(.system(size: 9, weight: .medium))
-                    if sectionTimes.contains(where: { $0.section == time.section }) || term == nil {
-                        Text(TimetableLayout.clock(time.startMinute)).font(.system(size: 8)).monospacedDigit()
-                    }
+                if sectionTimes.contains(where: { $0.section == time.section }) || term == nil {
+                    clockTick(time.startMinute, y: top, metrics: metrics)
                 }
-                .foregroundStyle(.secondary)
-                .frame(width: metrics.labelWidth, height: max(1, bottom - top))
-                .offset(y: top)
-                Rectangle().fill(Color.primary.opacity(0.06)).frame(height: 0.7).offset(y: top)
+                Text("第 \(time.section) 节").font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: max(0, metrics.labelWidth - 8), height: max(1, bottom - top))
+                    .offset(y: top)
             }
             Text("早间").font(.system(size: 8)).foregroundStyle(.tertiary)
-                .frame(width: metrics.labelWidth, height: timeline.y(for: Double(timeline.times.first?.startMinute ?? 480)))
+                .frame(width: max(0, metrics.labelWidth - 8), height: timeline.y(for: Double(timeline.times.first?.startMinute ?? 480)))
             if let end = timeline.times.last?.endMinute {
+                let nightTop = timeline.y(for: Double(end))
+                if sectionTimes.contains(where: { $0.endMinute == end }) || term == nil {
+                    clockTick(end, y: nightTop, metrics: metrics)
+                }
                 Text("夜间").font(.system(size: 8)).foregroundStyle(.tertiary)
-                    .frame(width: metrics.labelWidth, height: max(1, timeline.height - timeline.y(for: Double(end))))
-                    .offset(y: timeline.y(for: Double(end)))
+                    .padding(.bottom, 2)
+                    .frame(width: max(0, metrics.labelWidth - 8), height: max(1, timeline.height - nightTop), alignment: .bottom)
+                    .offset(y: nightTop)
             }
             Path { path in
                 for index in 0...7 {
@@ -224,6 +242,15 @@ struct ScheduleWeekView: View {
                 }
             }.stroke(Color.primary.opacity(0.065), lineWidth: 1)
         }
+        .frame(width: metrics.labelWidth + metrics.columnWidth * 7, height: timeline.height, alignment: .topLeading)
+    }
+
+    private func clockTick(_ minute: Int, y: CGFloat, metrics: ScheduleWeekMetrics) -> some View {
+        Text(TimetableLayout.clock(minute)).font(.system(size: 8)).monospacedDigit()
+            .foregroundStyle(.secondary)
+            .frame(width: max(0, metrics.labelWidth - 8), height: 10)
+            .background(Color(nsColor: .textBackgroundColor))
+            .offset(y: y - 5)
     }
 
     private func timedCard(_ event: PlanDisplayEvent, day: Date, index: Int, lane: ScheduleWeekLane,
@@ -277,7 +304,7 @@ struct ScheduleWeekView: View {
                 ForEach(TimetableLayout.placements(meetings)) { placement in
                     if let vertical = timeline.sectionRect(start: placement.meeting.startSection, count: placement.meeting.sectionCount) {
                         let width = metrics.columnWidth / CGFloat(placement.laneCount)
-                        let size = CGSize(width: max(1, width - 4), height: max(1, vertical.height - 3))
+                        let size = CGSize(width: max(1, width - 4), height: max(1, vertical.height))
                         Button {
                             onMeeting(ScheduleMeetingContext(term: term, meeting: placement.meeting, date: nil, selectedDate: selection.selectedDate))
                         } label: {
@@ -286,7 +313,7 @@ struct ScheduleWeekView: View {
                                 .background(theme.selection, in: RoundedRectangle(cornerRadius: 5))
                         }
                         .buttonStyle(.plain)
-                        .offset(x: metrics.labelWidth + CGFloat(weekday - 1) * metrics.columnWidth + CGFloat(placement.lane) * width + 2, y: vertical.minY + 1)
+                        .offset(x: metrics.labelWidth + CGFloat(weekday - 1) * metrics.columnWidth + CGFloat(placement.lane) * width + 2, y: vertical.minY)
                     }
                 }
             }
@@ -296,14 +323,12 @@ struct ScheduleWeekView: View {
     private func timeRect(_ event: PlanDisplayEvent, day: Date, timeline: ScheduleWeekTimeline) -> CGRect {
         if case .course(let course) = event.source,
            let rect = timeline.sectionRect(start: course.meeting.startSection, count: course.meeting.sectionCount) {
-            return CGRect(x: 0, y: rect.minY + 1, width: 0, height: max(1, rect.height - 2))
+            return rect
         }
         let midnight = calendar.startOfDay(for: day)
         let start = max(0, event.date.timeIntervalSince(midnight) / 60)
         let end = min(1440, (event.endDate ?? event.date.addingTimeInterval(30 * 60)).timeIntervalSince(midnight) / 60)
-        let top = timeline.y(for: start)
-        let height = max(13, timeline.y(for: max(start + 1, end)) - top - 1)
-        return CGRect(x: 0, y: min(top, max(0, timeline.height - height)), width: 0, height: min(height, timeline.height))
+        return timeline.intervalRect(start: start, end: max(start + 1, end), minimumHeight: 13)
     }
 
     private func eventDrag(_ event: PlanDisplayEvent, sourceRect: CGRect,
@@ -416,12 +441,12 @@ struct ScheduleWeekView: View {
         }
         if case .course(let course) = event.source, let section = target.startSection,
            let rect = timeline.sectionRect(start: section, count: course.meeting.sectionCount) {
-            return CGRect(x: x, y: rect.minY + 1, width: width, height: max(1, rect.height - 2))
+            return CGRect(x: x, y: rect.minY, width: width, height: rect.height)
         }
         let day = calendar.startOfDay(for: target.date), minute = target.date.timeIntervalSince(day) / 60
         let duration = max(15, (event.endDate ?? event.date.addingTimeInterval(1800)).timeIntervalSince(event.date) / 60)
-        let top = timeline.y(for: minute), bottom = timeline.y(for: min(1440, minute + duration))
-        return CGRect(x: x, y: top, width: width, height: max(13, bottom - top))
+        let rect = timeline.intervalRect(start: minute, end: min(1440, minute + duration), minimumHeight: 13)
+        return CGRect(x: x, y: rect.minY, width: width, height: rect.height)
     }
 
     @ViewBuilder private var dragPreview: some View {
@@ -483,12 +508,12 @@ struct ScheduleWeekView: View {
 
     @ViewBuilder private func creationPreview(_ metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> some View {
         if let creation {
-            let top = timeline.y(for: Double(creation.startMinute)), bottom = timeline.y(for: Double(creation.endMinute))
+            let rect = timeline.intervalRect(start: Double(creation.startMinute), end: Double(creation.endMinute), minimumHeight: 13)
             RoundedRectangle(cornerRadius: 5).fill(theme.selection)
                 .overlay { RoundedRectangle(cornerRadius: 5).strokeBorder(theme.ink, style: StrokeStyle(lineWidth: 1, dash: [3, 3])) }
                 .overlay(alignment: .topLeading) { Text("空").font(.system(size: 11, weight: .medium)).padding(4) }
-                .frame(width: max(1, metrics.columnWidth - 4), height: max(13, bottom - top))
-                .offset(x: metrics.labelWidth + CGFloat(creation.dayIndex) * metrics.columnWidth + 2, y: top)
+                .frame(width: max(1, metrics.columnWidth - 4), height: rect.height)
+                .offset(x: metrics.labelWidth + CGFloat(creation.dayIndex) * metrics.columnWidth + 2, y: rect.minY)
         }
     }
 
