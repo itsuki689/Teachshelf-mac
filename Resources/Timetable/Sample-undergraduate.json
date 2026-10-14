@@ -1,0 +1,12 @@
+{
+  "name": "2026-2027学年 第1学期（示例）",
+  "warnings": ["这是人工编写的演示课表，不对应真实学生；请勿用于上课安排。"],
+  "courses": [
+    {"name":"高等数学 A","class_number":"SAMPLE-MATH","teacher":"示例教师","classroom":"仙林 示例楼 101","weeks":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],"week_time":1,"start_time":1,"time_count":1},
+    {"name":"高等数学 A","class_number":"SAMPLE-MATH","teacher":"示例教师","classroom":"仙林 示例楼 101","weeks":[1,3,5,7,9,11,13,15],"week_time":3,"start_time":3,"time_count":1},
+    {"name":"程序设计基础","class_number":"SAMPLE-CS","teacher":"示例教师","classroom":"仙林 实验楼 204","weeks":[2,4,6,8,10,12,14,16],"week_time":2,"start_time":5,"time_count":2},
+    {"name":"大学英语","class_number":"SAMPLE-ENG","teacher":"示例教师","classroom":"仙林 示例楼 305","weeks":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],"week_time":4,"start_time":3,"time_count":1},
+    {"name":"体育","class_number":"SAMPLE-PE","teacher":"示例教师","classroom":"示例体育场","weeks":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],"week_time":5,"start_time":9,"time_count":0},
+    {"name":"自主研习","class_number":"SAMPLE-FREE","teacher":null,"classroom":"自由地点","weeks":[],"week_time":0,"start_time":0,"time_count":0,"info":"待安排示例"}
+  ]
+}

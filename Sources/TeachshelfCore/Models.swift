@@ -84,10 +84,11 @@ public struct StudyTask: Identifiable, Codable, Hashable, Sendable {
 }
 
 public struct LibraryState: Codable, Hashable, Sendable {
-    public var schemaVersion: Int = 1
+    public var schemaVersion: Int = 2
     public var courses: [Course] = []
     public var materials: [MaterialRecord] = []
     public var tasks: [StudyTask] = []
+    public var timetableTerms: [TimetableTerm] = []
     public var customCategories: [String] = []
     public var accentColor: String = ColorPalette.defaultAccent
     public var appearance: String = "system"
@@ -95,7 +96,7 @@ public struct LibraryState: Codable, Hashable, Sendable {
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, courses, materials, tasks, customCategories, accentColor, appearance, showCourseBorders
+        case schemaVersion, courses, materials, tasks, timetableTerms, customCategories, accentColor, appearance, showCourseBorders
     }
 
     public init(from decoder: Decoder) throws {
@@ -104,6 +105,7 @@ public struct LibraryState: Codable, Hashable, Sendable {
         courses = try values.decode([Course].self, forKey: .courses)
         materials = try values.decode([MaterialRecord].self, forKey: .materials)
         tasks = try values.decode([StudyTask].self, forKey: .tasks)
+        timetableTerms = values.contains(.timetableTerms) ? try values.decode([TimetableTerm].self, forKey: .timetableTerms) : []
         customCategories = try values.decode([String].self, forKey: .customCategories)
         accentColor = try values.decode(String.self, forKey: .accentColor)
         appearance = try values.decode(String.self, forKey: .appearance)

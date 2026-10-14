@@ -3,7 +3,7 @@ import SwiftUI
 import TeachshelfCore
 
 enum SidebarSelection: Hashable {
-    case all, favorites, recent, unassigned, course(UUID), homework, tasks, calendar, settings
+    case all, favorites, recent, unassigned, course(UUID), homework, tasks, calendar, timetable, settings
     var isLibrary: Bool {
         switch self { case .all, .favorites, .recent, .unassigned, .course: return true; default: return false }
     }
@@ -66,7 +66,12 @@ enum SidebarSelection: Hashable {
     func navigate(to destination: SidebarSelection?) {
         guard destination != navigation else { return }
         guard beforeLeavingMaterial?() != false else { return }
-        if case .course(let id) = destination { workspaceCourseID = id }
+        if case .course(let id) = destination {
+            workspaceCourseID = id
+            if semester != "全部学期", let course = state.courses.first(where: { $0.id == id }), course.semester != semester {
+                semester = course.semester.isEmpty ? "全部学期" : course.semester
+            }
+        }
         navigation = destination; selectedMaterialIDs = []
     }
     func selectMaterials(_ ids: Set<UUID>) {
@@ -132,6 +137,7 @@ enum SidebarSelection: Hashable {
         case .homework: return "作业文件夹"
         case .tasks: return "待办"
         case .calendar: return "日历"
+        case .timetable: return "课表"
         case .settings: return "设置"
         default: return "全部资料"
         }

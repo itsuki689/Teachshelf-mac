@@ -32,7 +32,12 @@ public final class LibraryRepository: @unchecked Sendable {
             if let date = formatter.date(from: text) { return date }
             throw DecodingError.dataCorruptedError(in: value, debugDescription: "无法读取日期：\(text)")
         }
-        return try decoder.decode(LibraryState.self, from: data)
+        var state = try decoder.decode(LibraryState.self, from: data)
+        // Older builds discard unknown fields when saving version 1. Upgrade
+        // only the in-memory snapshot on read; the next successful mutation
+        // writes version 2, which those builds refuse to open.
+        if state.schemaVersion == 1 { state.schemaVersion = 2 }
+        return state
     }
 
     public init(root: URL) throws {
@@ -111,6 +116,11 @@ public final class LibraryRepository: @unchecked Sendable {
             for index in state.tasks.indices where state.tasks[index].courseID == id {
                 state.tasks[index].courseID = nil
                 if !state.tasks[index].isArchived || state.tasks[index].courseNameSnapshot == nil { state.tasks[index].courseNameSnapshot = course.name }
+            }
+            for termIndex in state.timetableTerms.indices {
+                for meetingIndex in state.timetableTerms[termIndex].meetings.indices where state.timetableTerms[termIndex].meetings[meetingIndex].courseID == id {
+                    state.timetableTerms[termIndex].meetings[meetingIndex].courseID = nil
+                }
             }
         }
     }
@@ -298,7 +308,7 @@ public final class LibraryRepository: @unchecked Sendable {
         if let id, !snapshot.courses.contains(where: { $0.id == id }) { throw LibraryError.missingRecord("课程") }
     }
     private func validate(_ state: LibraryState) throws {
-        guard state.schemaVersion == 1 else { throw LibraryError.invalidInput("不支持的资料库版本 \(state.schemaVersion)。") }
+        guard state.schemaVersion == 2 else { throw LibraryError.invalidInput("不支持的资料库版本 \(state.schemaVersion)。") }
         guard ["system", "light", "dark"].contains(state.appearance) else { throw LibraryError.invalidInput("未知的外观设置。") }
         guard ColorPalette.isStoredColor(state.accentColor) else { throw LibraryError.invalidInput("资料库包含无效的强调色。") }
         guard Set(state.courses.map(\.id)).count == state.courses.count,
@@ -328,6 +338,7 @@ public final class LibraryRepository: @unchecked Sendable {
             if let id = task.courseID, !courseIDs.contains(id) { throw LibraryError.invalidInput("待办关联的课程不存在。") }
             guard task.materialIDs.allSatisfy(materialIDs.contains) else { throw LibraryError.invalidInput("待办关联的资料不存在。") }
         }
+        try validateTimetables(state.timetableTerms, courseIDs: courseIDs)
     }
     private func persist(_ state: LibraryState) throws {
         try rejectSymbolicLink(indexURL)
@@ -417,6 +428,153 @@ public final class LibraryRepository: @unchecked Sendable {
         let name = known.first { $0.caseInsensitiveCompare(normalized) == .orderedSame } ?? normalized
         if !Self.builtInCategories.contains(name), !state.customCategories.contains(name) { state.customCategories.append(name) }
         return name
+    }
+}
+
+extension LibraryRepository {
+    /// Replaces one semester in a single metadata transaction. Existing course
+    /// records retain their user edits, materials, tasks, and workspace folders.
+    @discardableResult public func importUndergraduateTimetable(_ schedule: UndergraduateSchedule) throws -> TimetableImportSummary {
+        let name = schedule.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw LibraryError.invalidInput("课表缺少学期名称。") }
+        guard !schedule.courses.isEmpty else { throw LibraryError.invalidInput("课表中没有可导入的本科课程。") }
+        var summary = TimetableImportSummary(termID: UUID(), coursesCreated: 0, meetingsImported: 0)
+        try commit { state in
+            let existing = state.timetableTerms.first { $0.name == name }
+            var term = existing ?? TimetableTerm(name: name)
+            let courseIDs = Set(state.courses.map(\.id))
+            var oldCourseIDs: [TimetableCourseKey: UUID] = [:]
+            var oldSessionIDs: [TimetableMeeting: UUID] = [:]
+            for meeting in term.meetings {
+                if let id = meeting.courseID, courseIDs.contains(id) {
+                    oldCourseIDs[TimetableCourseKey(code: meeting.courseCode, title: meeting.title, teacher: meeting.teacher)] = id
+                }
+                oldSessionIDs[Self.timetableSessionKey(meeting)] = meeting.id
+            }
+            var importedCourseIDs: [TimetableCourseKey: UUID] = [:]
+            var sessions = Set<TimetableMeeting>()
+            var meetings: [TimetableMeeting] = []
+            var created = 0
+            for course in schedule.courses {
+                let title = course.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                let teacher = (course.teacher ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let code = (course.classNumber ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let classroom = (course.classroom ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                var notes = [(course.info ?? "").trimmingCharacters(in: .whitespacesAndNewlines)]
+                if let time = course.examTime?.trimmingCharacters(in: .whitespacesAndNewlines), !time.isEmpty { notes.append("考试时间：\(time)") }
+                if let location = course.examLocation?.trimmingCharacters(in: .whitespacesAndNewlines), !location.isEmpty { notes.append("考试地点：\(location)") }
+                // Validate the raw offset too: a free-time row must not conceal
+                // malformed negative or non-zero period data.
+                guard course.timeCount >= 0, course.timeCount < 30,
+                      course.startSection > 0 || course.timeCount == 0 else { throw LibraryError.invalidInput("\(title)：课程节次无效。") }
+                var meeting = TimetableMeeting(courseCode: code, title: title, teacher: teacher, classroom: classroom,
+                    weeks: Array(Set(course.weeks)).sorted(), weekday: course.weekday == 0 ? nil : course.weekday,
+                    startSection: course.startSection, sectionCount: course.sectionCount, note: notes.filter { !$0.isEmpty }.joined(separator: "\n"))
+                try Self.validateTimetableMeeting(meeting, weekCount: 60, courseIDs: nil)
+                let key = TimetableCourseKey(code: code, title: title, teacher: teacher)
+                if let id = importedCourseIDs[key] ?? oldCourseIDs[key] {
+                    meeting.courseID = id
+                } else if let existingCourse = state.courses.first(where: { $0.semester == name && $0.name == title && $0.teacher == teacher }) {
+                    meeting.courseID = existingCourse.id
+                } else {
+                    let newCourse = Course(name: title, semester: name, teacher: teacher,
+                        colorHex: ColorPalette.themes[state.courses.count % ColorPalette.themes.count].hex)
+                    state.courses.append(newCourse)
+                    meeting.courseID = newCourse.id
+                    created += 1
+                }
+                importedCourseIDs[key] = meeting.courseID
+                let sessionKey = Self.timetableSessionKey(meeting)
+                guard sessions.insert(sessionKey).inserted else { continue }
+                meeting.id = oldSessionIDs[sessionKey] ?? meeting.id
+                meetings.append(meeting)
+            }
+            term.meetings = meetings
+            term.weekCount = max(term.weekCount, meetings.flatMap(\.weeks).max() ?? 1)
+            if let index = state.timetableTerms.firstIndex(where: { $0.id == term.id }) { state.timetableTerms[index] = term }
+            else { state.timetableTerms.append(term) }
+            summary = TimetableImportSummary(termID: term.id, coursesCreated: created, meetingsImported: meetings.count)
+        }
+        return summary
+    }
+
+    public func saveTimetableTerm(_ term: TimetableTerm) throws {
+        var term = term
+        term.name = term.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let monday = term.weekOneMonday, monday.timeIntervalSinceReferenceDate.isFinite {
+            term.weekOneMonday = TimetableTerm.academicCalendar.startOfDay(for: monday)
+        }
+        try commit { state in
+            if let index = state.timetableTerms.firstIndex(where: { $0.id == term.id }) { state.timetableTerms[index] = term }
+            else { state.timetableTerms.append(term) }
+        }
+    }
+
+    public func deleteTimetableTerm(id: UUID) throws {
+        try commit { state in
+            guard state.timetableTerms.contains(where: { $0.id == id }) else { throw LibraryError.missingRecord("学期课表") }
+            state.timetableTerms.removeAll { $0.id == id }
+        }
+    }
+
+    private func validateTimetables(_ terms: [TimetableTerm], courseIDs: Set<UUID>) throws {
+        guard Set(terms.map(\.id)).count == terms.count,
+              Set(terms.map(\.name)).count == terms.count else { throw LibraryError.invalidInput("课表包含重复的学期编号或名称。") }
+        var meetingIDs = Set<UUID>()
+        for term in terms {
+            guard !term.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  term.name == term.name.trimmingCharacters(in: .whitespacesAndNewlines) else { throw LibraryError.invalidInput("课表学期名称不能为空或含有首尾空格。") }
+            guard (1...60).contains(term.weekCount) else { throw LibraryError.invalidInput("学期周数应为 1–60 周。") }
+            if let monday = term.weekOneMonday {
+                guard monday.timeIntervalSinceReferenceDate.isFinite,
+                      TimetableTerm.academicCalendar.component(.weekday, from: monday) == 2 else { throw LibraryError.invalidInput("请将第一周起始日设为周一（中国标准时间）。") }
+            }
+            var previousSection = 0, previousEnd = 0
+            for time in term.sectionTimes {
+                guard (1...30).contains(time.section), time.section > previousSection,
+                      time.startMinute >= 0, time.startMinute < time.endMinute, time.endMinute <= 1_440,
+                      time.startMinute >= previousEnd else { throw LibraryError.invalidInput("作息时间需按节次排序，各节的开始和结束时间不能重叠。") }
+                previousSection = time.section; previousEnd = time.endMinute
+            }
+            for meeting in term.meetings {
+                guard meetingIDs.insert(meeting.id).inserted else { throw LibraryError.invalidInput("课表包含重复的上课记录编号。") }
+                try Self.validateTimetableMeeting(meeting, weekCount: term.weekCount, courseIDs: courseIDs)
+            }
+        }
+    }
+
+    private static func validateTimetableMeeting(_ meeting: TimetableMeeting, weekCount: Int, courseIDs: Set<UUID>?) throws {
+        guard !meeting.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw LibraryError.invalidInput("课表课程名称不能为空。") }
+        if let id = meeting.courseID, let courseIDs, !courseIDs.contains(id) { throw LibraryError.invalidInput("课表关联的课程不存在。") }
+        let freeTime = (meeting.weekday == nil || meeting.weekday == 0) && meeting.startSection == 0 && meeting.sectionCount == 0
+        guard (freeTime || !meeting.weeks.isEmpty), Set(meeting.weeks).count == meeting.weeks.count,
+              meeting.weeks.allSatisfy({ (1...weekCount).contains($0) }) else { throw LibraryError.invalidInput("\(meeting.title)：上课周次应在学期周数范围内。") }
+        if meeting.weekday == nil || meeting.weekday == 0 {
+            guard meeting.startSection == 0, meeting.sectionCount == 0 else { throw LibraryError.invalidInput("\(meeting.title)：自由时间课程不能包含固定节次。") }
+        } else {
+            guard let weekday = meeting.weekday, (1...7).contains(weekday), (1...30).contains(meeting.startSection),
+                  (1...30).contains(meeting.sectionCount), meeting.endSection <= 30 else { throw LibraryError.invalidInput("\(meeting.title)：星期或课程节次无效。") }
+        }
+    }
+
+    private static func timetableSessionKey(_ meeting: TimetableMeeting) -> TimetableMeeting {
+        var key = meeting
+        key.id = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+        key.courseID = nil
+        return key
+    }
+}
+
+private struct TimetableCourseKey: Hashable {
+    var code: String
+    var title: String
+    var teacher: String
+
+    init(code: String, title: String, teacher: String) {
+        self.code = code
+        // A portal course number survives user edits to the library course.
+        self.title = code.isEmpty ? title : ""
+        self.teacher = code.isEmpty ? teacher : ""
     }
 }
 

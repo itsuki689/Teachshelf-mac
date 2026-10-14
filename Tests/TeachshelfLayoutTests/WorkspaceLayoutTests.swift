@@ -17,6 +17,9 @@ import TeachshelfCore
         try "Layout regression fixture".write(to: source, atomically: true, encoding: .utf8)
         _ = try repository.importFiles(urls: [source], courseID: course.id, category: "课件", copy: true)
         try repository.saveTask(StudyTask(title: "复习线性变换", courseID: course.id, deadline: Date().addingTimeInterval(86400)))
+        _ = try repository.importUndergraduateTimetable(UndergraduateSchedule(name: "2026 秋季", courses: [
+            UndergraduateCourse(name: "线性代数与矩阵计算", classroom: "教学楼 201", teacher: "", weeks: Array(1...18), weekday: 1, startSection: 3, timeCount: 1)
+        ]))
         let store = AppStore(repository: repository, remembersLocation: false)
         let host = NSHostingView(rootView: ContentView().appTheme().environmentObject(store))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1020, height: 680), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
@@ -30,7 +33,7 @@ import TeachshelfCore
         for size in [NSSize(width: 1260, height: 800), NSSize(width: 1020, height: 680)] {
             window.setContentSize(size)
             let originalFrame = window.frame
-            for page in [SidebarSelection.all, .calendar, .tasks, .homework, .settings, .course(course.id), .all] {
+            for page in [SidebarSelection.all, .calendar, .tasks, .homework, .settings, .timetable, .course(course.id), .all] {
                 store.navigate(to: page)
                 RunLoop.main.run(until: Date().addingTimeInterval(0.05))
                 host.layoutSubtreeIfNeeded()

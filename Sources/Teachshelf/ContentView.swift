@@ -17,6 +17,7 @@ struct ContentView: View {
                             switch store.navigation {
                             case .tasks: TaskWorkspace()
                             case .calendar: CalendarWorkspace()
+                            case .timetable: TimetableWorkspace()
                             case .homework: HomeworkWorkspace()
                             case .settings: SettingsWorkspace()
                             default: LibraryWorkspace()
@@ -70,18 +71,19 @@ struct ContentView: View {
             ChoiceMenu("学期", selection: $store.semester, selectedTitle: store.semester) {
                 ForEach(store.semesters, id: \.self) { Text($0).tag($0) }
             }.padding(.horizontal, 14).padding(.bottom, 12)
-            HStack(spacing: 5) {
+            HStack(spacing: 2) {
                 libraryShortcut("全部资料", "tray.full", .all, hint: "全部资料 · \(store.state.materials.count) 份")
                 libraryShortcut("我的收藏", "star", .favorites, hint: "我的收藏 · \(store.state.materials.filter(\.isFavorite).count) 份")
                 libraryShortcut("最近打开", "clock", .recent, hint: "最近打开")
                 libraryShortcut("未分类", "tray", .unassigned, hint: "未分类资料")
+                libraryShortcut("作业文件夹", "folder", .homework, hint: "作业文件夹")
+                libraryShortcut("待办", "checklist", .tasks, hint: "待办 · \(store.pendingTaskCount) 项未完成")
             }.padding(.horizontal, 14).padding(.bottom, 12)
-                .accessibilityElement(children: .contain).accessibilityLabel("资料库")
+                .accessibilityElement(children: .contain).accessibilityLabel("快捷入口")
 
             VStack(spacing: 3) {
-                navRow("作业文件夹", "folder", .homework)
-                navRow("待办", "checklist", .tasks, count: store.pendingTaskCount)
                 navRow("日历", "calendar", .calendar)
+                navRow("课表", "rectangle.split.3x3", .timetable)
             }.padding(.horizontal, 14)
             Divider().padding(.horizontal, 20).padding(.vertical, 15)
             HStack {
@@ -136,7 +138,7 @@ struct ContentView: View {
     }
 
     private func moveSidebar(_ offset: Int) {
-        let destinations: [SidebarSelection] = [.all, .favorites, .recent, .unassigned, .homework, .tasks, .calendar]
+        let destinations: [SidebarSelection] = [.all, .favorites, .recent, .unassigned, .homework, .tasks, .calendar, .timetable]
             + store.sidebarCourses.map { .course($0.id) } + [.settings]
         let index = store.navigation.flatMap { destinations.firstIndex(of: $0) } ?? 0
         store.navigate(to: destinations[min(max(index + offset, 0), destinations.count - 1)])

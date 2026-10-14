@@ -8,6 +8,11 @@ SELECTED_DEVELOPER_DIR="${DEVELOPER_DIR:-$(/usr/bin/xcode-select --print-path)}"
 
 cd "$PROJECT_DIR"
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
+if command -v node >/dev/null 2>&1; then
+    node "$PROJECT_DIR/scripts/test-nju-parser.js"
+else
+    printf '未检测到 Node.js，跳过本科课表解析器测试（可单独运行 node scripts/test-nju-parser.js）。\n'
+fi
 TEST_ARGS=(
     --disable-sandbox --disable-xctest
     --cache-path "$PROJECT_DIR/.build/cache"
