@@ -60,7 +60,9 @@ private struct ScheduleContent: View {
         .onAppear {
             selection.setMode(ScheduleMode(rawValue: savedMode) ?? .week, in: store.state)
             selection.reconcile(store.state)
+            ScheduleEventEditing.clearLockedSelection(in: store, fixedEditing: adjusting)
         }
+        .onChange(of: adjusting) { _, enabled in ScheduleEventEditing.clearLockedSelection(in: store, fixedEditing: enabled) }
         .onChange(of: selection.mode) { _, mode in savedMode = mode.rawValue }
         .onChange(of: store.state) { _, state in selection.reconcile(state) }
     }
@@ -205,8 +207,8 @@ private struct ScheduleContent: View {
         VStack(alignment: .leading, spacing: 7) {
             Toggle("编辑固定计划", isOn: $adjusting).toggleStyle(.switch).controlSize(.small)
                 .disabled(!selection.showsCourses)
-                .help("开启后可拖动课程；有具体时段的活动计划可直接拖动")
-            Text("单击选中，双击编辑；边缘拖动调整时间，方向键整体移动。课程需先开启编辑。青点为全天，红点为 DDL。")
+                .help("开启后可选中和调整固定计划；活动计划可直接选择和调整")
+            Text("活动单击选中、双击编辑；固定需开启编辑才可选中，双击查看详情。边缘调时，方向键移动。青点全天，红点 DDL。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }

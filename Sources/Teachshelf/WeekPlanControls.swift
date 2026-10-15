@@ -9,7 +9,7 @@ struct WeekPlanControls: View {
     let onOpen: (PlanDisplayEvent) -> Void
 
     var body: some View {
-        if let event = ScheduleEventEditing.selected(in: store) {
+        if let event = ScheduleEventEditing.selected(in: store), ScheduleEventEditing.canSelect(event, fixedEditing: adjusting) {
             let editable = ScheduleEventEditing.canEdit(event, fixedEditing: adjusting)
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
@@ -30,7 +30,7 @@ struct WeekPlanControls: View {
                         Spacer(minLength: 0)
                     }
                     .disabled(!editable || store.isBusy)
-                    Text(event.isFixed && !adjusting ? "开启“编辑固定计划”后可调整本次时间。" : "拖动上下边缘吸附10分钟；±精调1分钟。方向键整体移动，双击打开详情。")
+                    Text("拖动上下边缘吸附10分钟；±精调1分钟。方向键整体移动，双击打开详情。")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text("跨天安排或未设置作息的课程，请在详情中调整。")

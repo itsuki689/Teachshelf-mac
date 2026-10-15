@@ -65,6 +65,40 @@ import TeachshelfCore
         #expect(!ScheduleEventEditing.canEdit(event, fixedEditing: true))
     }
 
+    @Test func lockedFixedEventsCannotReplaceActivitySelectionAndRelockingClearsThem() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("plan-selection-lock-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try LibraryRepository(root: root)
+        let activity = StudyTask(title: "自主安排", startsAt: date(15, 12), deadline: date(15, 22), isAllDay: false, endsAt: date(15, 13))
+        try repository.savePlan(activity)
+        try repository.savePlan(StudyTask(title: "固定活动", startsAt: date(15, 14), isAllDay: false, origin: .fixed, endsAt: date(15, 15)))
+        try repository.saveTimetableTerm(TimetableTerm(name: "秋季", weekOneMonday: date(12), weekCount: 2,
+            sectionTimes: UndergraduateTimetableDefaults.sectionTimes,
+            meetings: [TimetableMeeting(title: "课程", weeks: [1], weekday: 4, startSection: 1, sectionCount: 2)]))
+        let store = AppStore(repository: repository, remembersLocation: false)
+        let selection = store.scheduleSelection
+        selection.setDate(date(15))
+        let before = store.state
+        let events = ScheduleData.planEvents(on: date(15), in: store.state, selection: selection)
+        let manual = try #require(events.first { !$0.isFixed })
+        let fixed = events.filter(\.isFixed)
+        #expect(fixed.count == 3) // Imported course, fixed activity and generated DDL.
+        for event in fixed {
+            #expect(ScheduleEventEditing.select(manual, in: store, fixedEditing: false))
+            #expect(!ScheduleEventEditing.select(event, in: store, fixedEditing: false))
+            #expect(selection.selectedEventID == manual.id)
+            #expect(ScheduleEventEditing.select(event, in: store, fixedEditing: true))
+            #expect(selection.selectedEventID == event.id)
+            selection.timePreview = PlanTimeRange(start: 480, end: 590)
+            ScheduleEventEditing.clearLockedSelection(in: store, fixedEditing: false)
+            #expect(selection.selectedEventID == nil && selection.timePreview == nil)
+        }
+        #expect(ScheduleEventEditing.select(manual, in: store, fixedEditing: true))
+        ScheduleEventEditing.clearLockedSelection(in: store, fixedEditing: false)
+        #expect(selection.selectedEventID == manual.id)
+        #expect(store.state == before)
+    }
+
     @Test func anExclusiveMidnightEndDisplaysAs24AndDoesNotSpillIntoTomorrow() {
         let plan = StudyTask(title: "当天结束", startsAt: date(15, 23), isAllDay: false, endsAt: date(16))
         let occurrence = PlanCalendar.events(on: date(15), plans: [plan])[0]

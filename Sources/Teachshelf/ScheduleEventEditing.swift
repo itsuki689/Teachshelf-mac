@@ -45,7 +45,26 @@ import TeachshelfCore
     }
 
     static func canEdit(_ event: PlanDisplayEvent, fixedEditing: Bool) -> Bool {
-        range(of: event) != nil && (!event.isFixed || fixedEditing)
+        range(of: event) != nil && canSelect(event, fixedEditing: fixedEditing)
+    }
+
+    static func canSelect(_ event: PlanDisplayEvent, fixedEditing: Bool) -> Bool {
+        !event.isFixed || fixedEditing
+    }
+
+    @discardableResult static func select(_ event: PlanDisplayEvent, in store: AppStore, fixedEditing: Bool) -> Bool {
+        guard canSelect(event, fixedEditing: fixedEditing) else { return false }
+        let selection = store.scheduleSelection
+        selection.timePreview = nil
+        selection.setDate(event.date)
+        selection.selectedEventID = event.id
+        return true
+    }
+
+    static func clearLockedSelection(in store: AppStore, fixedEditing: Bool) {
+        guard let event = selected(in: store), !canSelect(event, fixedEditing: fixedEditing) else { return }
+        store.scheduleSelection.selectedEventID = nil
+        store.scheduleSelection.timePreview = nil
     }
 
     @discardableResult static func apply(_ range: PlanTimeRange, to event: PlanDisplayEvent, on day: Date,

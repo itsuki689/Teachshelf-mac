@@ -165,6 +165,9 @@ struct ScheduleWeekView: View {
             }
         }
         .frame(width: metrics.labelWidth + metrics.columnWidth * 7, height: timeline.height)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.primary.opacity(0.09)).frame(height: 0.7).allowsHitTesting(false)
+        }
     }
 
     private func gridBackground(_ metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> some View {
@@ -222,8 +225,7 @@ struct ScheduleWeekView: View {
                     clockTick(end, y: nightTop, metrics: metrics)
                 }
                 Text("夜间").font(.system(size: 11)).foregroundStyle(.secondary)
-                    .padding(.bottom, 2)
-                    .frame(width: metrics.sectionColumnWidth, height: max(1, timeline.height - nightTop), alignment: .bottom)
+                    .frame(width: metrics.sectionColumnWidth, height: max(1, timeline.height - nightTop))
                     .offset(x: metrics.timeColumnWidth, y: nightTop)
             }
             Path { path in
@@ -254,7 +256,11 @@ struct ScheduleWeekView: View {
         } else { vertical = timeRect(event, day: day, timeline: timeline) }
         let rect = metrics.eventRect(dayIndex: index, lane: lane.lane, laneCount: lane.laneCount,
                                      top: vertical.minY, height: vertical.height)
-        let selected = selection.selectedEventID == event.id
+        let selectable = ScheduleEventEditing.canSelect(event, fixedEditing: adjusting)
+        let selected = selectable && selection.selectedEventID == event.id
+        let hint = selectable
+            ? "单击选中，双击编辑" + (canDrag(event) ? " · 拖动调整，上下边缘改变时间" : " · 请在详情中调整时间")
+            : "双击查看详情 · 开启编辑固定计划后可选中和调整"
         let card = Button {
             guard drag == nil, resize == nil, Date().timeIntervalSince(lastDragEnded) > 0.15 else { return }
             select(event)
@@ -269,9 +275,9 @@ struct ScheduleWeekView: View {
         }
         .buttonStyle(.plain).frame(width: rect.width, height: rect.height)
         .opacity(drag?.event.id == event.id ? 0.16 : 1)
-        .help("\(event.title) · \(event.timeLabel) · 单击选中，双击编辑\(canDrag(event) ? " · 拖动调整，上下边缘改变时间" : ScheduleEventEditing.range(of: event) == nil ? " · 请在详情中调整时间" : " · 开启编辑固定计划后可调整")")
+        .help("\(event.title) · \(event.timeLabel) · \(hint)")
         .accessibilityLabel("\(event.title)，\(event.timeLabel)，\(event.location)")
-        .accessibilityValue(selected ? "已选中，可用方向键移动" : "未选中")
+        .accessibilityValue(selectable ? (selected ? "已选中，可用方向键移动" : "未选中") : "固定计划，未开启编辑，不可选中")
         .simultaneousGesture(TapGesture(count: 2).onEnded { open(event) })
         .contextMenu { Button("查看与编辑…") { open(event) } }
         return Group {
@@ -288,9 +294,7 @@ struct ScheduleWeekView: View {
     }
 
     private func select(_ event: PlanDisplayEvent) {
-        selection.timePreview = nil
-        selection.setDate(event.date)
-        selection.selectedEventID = event.id
+        guard ScheduleEventEditing.select(event, in: store, fixedEditing: adjusting) else { return }
         keyboardFocused = true
     }
 
