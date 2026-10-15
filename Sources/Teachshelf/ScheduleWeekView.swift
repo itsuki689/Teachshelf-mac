@@ -302,8 +302,10 @@ struct ScheduleWeekView: View {
         let showsDetails = size.height >= 48
         let titleLines = max(1, min(4, Int((size.height - verticalInset * 2 - (showsDetails ? 16 : 0)) / 16)))
         return VStack(alignment: .leading, spacing: 2) {
-            Text(event.title).font(.system(size: compact ? 10 : (size.width < 46 ? 11 : 13), weight: .semibold))
-                .lineLimit(titleLines).strikethrough(event.isCompleted)
+            if size.height >= 12 {
+                Text(event.title).font(.system(size: compact ? 10 : (size.width < 46 ? 11 : 13), weight: .semibold))
+                    .lineLimit(titleLines).strikethrough(event.isCompleted)
+            }
             if showsDetails {
                 Text(event.location.isEmpty ? event.timeLabel : event.location)
                     .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)

@@ -56,7 +56,14 @@ struct TaskWorkspace: View {
         guard selection.count == 1, let id = selection.first else { return nil }
         return store.state.tasks.first { $0.id == id }
     }
-    private var pendingCount: Int { store.pendingTaskCount }
+    private var pendingCount: Int {
+        guard let courseID else { return store.pendingTaskCount }
+        return store.state.tasks.filter { parent in
+            guard !parent.isArchived, !parent.isCancelled else { return false }
+            let variants = [parent] + parent.exceptions.map { PlanCalendar.snapshot(of: parent, originalDate: $0.originalDate) }
+            return variants.contains { $0.courseID == courseID && $0.completionRequired && !$0.isCompleted && !$0.isCancelled }
+        }.count
+    }
 
     var body: some View {
         VStack(spacing: 0) {
