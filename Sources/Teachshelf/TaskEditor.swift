@@ -63,6 +63,7 @@ struct TaskEditor: View {
         return draft.origin == .fixed ? "固定计划 · 开启固定计划编辑后可拖曳" : "活动计划 · 可以直接拖曳调整"
     }
     private var validationMessage: String? {
+        if let hex = draft.colorHex, RGBColor(hex: hex) == nil { return "计划颜色须为六位 HEX 颜色。" }
         if draft.hasExecutionTime && executionEnd < draft.startsAt { return "结束时间不能早于开始时间。" }
         if repeats && !draft.hasExecutionTime && !hasDeadline { return "重复计划需要执行时间或截止时间。" }
         let repeatStart = draft.hasExecutionTime ? draft.startsAt : (hasDeadline ? deadline : draft.startsAt)
@@ -95,6 +96,9 @@ struct TaskEditor: View {
                     }
                 }
                 contentSection
+                Section("计划颜色") {
+                    PlanColorControl(colorHex: $draft.colorHex, inheritedHex: draft.courseID.flatMap { id in store.state.courses.first { $0.id == id }?.colorHex } ?? store.effectiveAccentHex)
+                }
                 if focusDeadline { deadlineSection; executionSection }
                 else { executionSection; deadlineSection }
                 repeatSection

@@ -60,9 +60,7 @@ enum TimetableLayout {
     }
 
     static func timeLabel(_ meeting: TimetableMeeting, in term: TimetableTerm) -> String? {
-        guard let first = term.sectionTimes.first(where: { $0.section == meeting.startSection }),
-              let last = term.sectionTimes.first(where: { $0.section == meeting.endSection }) else { return nil }
-        return "\(clock(first.startMinute))–\(clock(last.endMinute))"
+        TimetableCalendar.timeLabel(for: meeting, sectionTimes: term.sectionTimes)
     }
 
     static func weeksLabel(_ weeks: [Int]) -> String {

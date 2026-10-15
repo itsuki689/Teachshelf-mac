@@ -33,6 +33,8 @@ final class ScheduleSelection: ObservableObject {
     @Published var showsTasks = true
     @Published var planFilter: SchedulePlanFilter = .all
     @Published private(set) var agendaFocus: ScheduleDaySection?
+    @Published var selectedEventID: String?
+    @Published var timePreview: PlanTimeRange?
 
     private var calendar: Calendar { TimetableTerm.academicCalendar }
 
@@ -44,7 +46,7 @@ final class ScheduleSelection: ObservableObject {
 
     func setDate(_ date: Date) {
         guard date.timeIntervalSinceReferenceDate.isFinite else { return }
-        if !calendar.isDate(date, inSameDayAs: selectedDate) { agendaFocus = nil }
+        if !calendar.isDate(date, inSameDayAs: selectedDate) { agendaFocus = nil; selectedEventID = nil }
         selectedDate = calendar.startOfDay(for: date)
     }
 
@@ -75,6 +77,7 @@ final class ScheduleSelection: ObservableObject {
 
     func setMode(_ mode: ScheduleMode, in state: LibraryState) {
         if mode != .agenda { agendaFocus = nil }
+        if mode != .week { selectedEventID = nil }
         self.mode = mode
         reconcile(state)
     }

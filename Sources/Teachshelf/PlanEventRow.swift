@@ -9,7 +9,7 @@ struct PlanEventRow: View {
     let onOpen: () -> Void
 
     var body: some View {
-        let color = ScheduleEventColor.course(event.courseID, in: store.state, theme: theme)
+        let color = ScheduleEventColor.event(event, in: store.state, theme: theme)
         let shape = RoundedRectangle(cornerRadius: event.planOccurrence == nil ? 0 : 10)
         HStack(alignment: .top, spacing: compact ? 8 : 12) {
             if let occurrence = event.planOccurrence, event.completionRequired {

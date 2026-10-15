@@ -113,6 +113,10 @@ struct ScheduleTaskCard: View {
 }
 
 enum ScheduleEventColor {
+    static func event(_ event: PlanDisplayEvent, in state: LibraryState, theme: AppTheme) -> Color {
+        if let hex = event.colorHex, RGBColor(hex: hex) != nil { return Color(hex: hex) }
+        return course(event.courseID, in: state, theme: theme)
+    }
     static func course(_ id: UUID?, in state: LibraryState, theme: AppTheme) -> Color {
         guard let course = state.courses.first(where: { $0.id == id }) else { return theme.ink }
         return Color(hex: course.colorHex)

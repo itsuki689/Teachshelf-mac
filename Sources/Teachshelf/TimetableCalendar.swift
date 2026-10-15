@@ -38,12 +38,8 @@ enum TimetableCalendar {
     }
 
     static func timeLabel(for meeting: TimetableMeeting, sectionTimes: [TimetableSectionTime]) -> String? {
-        guard meeting.isScheduled,
-              let start = sectionTimes.first(where: { $0.section == meeting.startSection }),
-              let end = sectionTimes.first(where: { $0.section == meeting.endSection }),
-              (0..<1440).contains(start.startMinute), (0...1440).contains(end.endMinute),
-              end.endMinute > start.startMinute else { return nil }
-        return "\(clock(start.startMinute))–\(clock(end.endMinute))"
+        guard let range = meeting.timeRange(sectionTimes: sectionTimes) else { return nil }
+        return "\(clock(range.start))–\(clock(range.end))"
     }
 
     static func formatted(_ date: Date, template: String) -> String {

@@ -31,6 +31,9 @@ struct PlanDisplayEvent: Identifiable, Hashable {
     var isFixed: Bool { if case .plan(let event) = source { return event.isFixed }; return true }
     var isAllDay: Bool { if case .plan(let event) = source { return event.isAllDay }; return false }
     var daySection: ScheduleDaySection { isDeadline ? .deadlines : (isAllDay ? .allDay : .timed) }
+    var colorHex: String? {
+        switch source { case .plan(let event): return event.task.colorHex; case .course(let event): return event.meeting.colorHex }
+    }
     var courseID: UUID? {
         switch source { case .course(let event): return event.meeting.courseID; case .plan(let event): return event.task.courseID }
     }
@@ -45,7 +48,10 @@ struct PlanDisplayEvent: Identifiable, Hashable {
         if isDeadline { return isAllDay ? "当日截止" : "\(TimetableCalendar.formatted(date, template: "HHmm")) 截止" }
         if isAllDay { return "全天" }
         let begin = TimetableCalendar.formatted(date, template: "HHmm")
-        return endDate.map { "\(begin)–\(TimetableCalendar.formatted($0, template: "HHmm"))" } ?? begin
+        return endDate.map {
+            let nextDay = TimetableCalendar.calendar.date(byAdding: .day, value: 1, to: TimetableCalendar.calendar.startOfDay(for: date))
+            return "\(begin)–\($0 == nextDay ? "24:00" : TimetableCalendar.formatted($0, template: "HHmm"))"
+        } ?? begin
     }
 }
 
@@ -59,10 +65,9 @@ extension ScheduleData {
                 let master = term.meetings.first { $0.id == event.meeting.id }
                 guard !forMonth || (master?.showInMonth ?? event.meeting.showInMonth) == true else { continue }
                 let calendar = TimetableTerm.academicCalendar
-                let start = term.sectionTimes.first { $0.section == event.meeting.startSection }
-                let end = term.sectionTimes.first { $0.section == event.meeting.endSection }
-                let date = start.flatMap { calendar.date(byAdding: .minute, value: $0.startMinute, to: calendar.startOfDay(for: day)) } ?? event.day
-                let endDate = end.flatMap { calendar.date(byAdding: .minute, value: $0.endMinute, to: calendar.startOfDay(for: day)) }
+                let range = event.meeting.timeRange(sectionTimes: term.sectionTimes)
+                let date = range.flatMap { calendar.date(byAdding: .minute, value: $0.start, to: calendar.startOfDay(for: day)) } ?? event.day
+                let endDate = range.flatMap { calendar.date(byAdding: .minute, value: $0.end, to: calendar.startOfDay(for: day)) }
                 result.append(PlanDisplayEvent(source: .course(event), date: date, endDate: endDate))
             }
         }

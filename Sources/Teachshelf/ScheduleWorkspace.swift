@@ -46,6 +46,10 @@ private struct ScheduleContent: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .onKeyPress(phases: [.down, .repeat]) { press in
+            guard selection.mode == .week, panel == nil, !choosingDate else { return .ignored }
+            return ScheduleEventEditing.handleKey(press, store: store, fixedEditing: adjusting)
+        }
         .environment(\.calendar, TimetableTerm.academicCalendar)
         .environment(\.timeZone, TimetableTerm.academicCalendar.timeZone)
         .sheet(item: $panel) { item in
@@ -80,6 +84,16 @@ private struct ScheduleContent: View {
                     modePicker
                     filters
                     if selection.mode == .week { adjustmentControls }
+                    if selection.mode == .week {
+                        WeekPlanControls(selection: selection, adjusting: adjusting) { event in
+                            if let plan = event.planOccurrence { editOccurrence(plan) }
+                            else if case .course(let course) = event.source,
+                                    let term = store.state.timetableTerms.first(where: { $0.id == course.termID }) {
+                                showMeeting(ScheduleMeetingContext(term: term, meeting: course.meeting, date: course.day,
+                                    selectedDate: selection.selectedDate, originalDate: course.originalDate))
+                            }
+                        }
+                    }
                     if store.canUndoTimetableChange {
                         Button {
                             withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82)) {
@@ -192,7 +206,7 @@ private struct ScheduleContent: View {
             Toggle("编辑固定计划", isOn: $adjusting).toggleStyle(.switch).controlSize(.small)
                 .disabled(!selection.showsCourses)
                 .help("开启后可拖动课程；有具体时段的活动计划可直接拖动")
-            Text("时段计划可直接拖动，课程需先开启编辑。日期旁青点为全天、红点为 DDL，点击查看当天详情。")
+            Text("单击选中，双击编辑；边缘拖动调整时间，方向键整体移动。课程需先开启编辑。青点为全天，红点为 DDL。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }

@@ -36,6 +36,7 @@ struct ScheduleMeetingSheet: View {
                     Text(context.term.name).font(.callout).foregroundStyle(.secondary)
                     Label("固定计划 · 来自导入课表", systemImage: "lock")
                         .font(.caption).foregroundStyle(.secondary)
+                    Button("调整本时段计划颜色…") { panel = .color }.buttonStyle(.borderless)
                     Toggle("将此时段加入月历", isOn: Binding(get: {
                         store.state.timetableTerms.first { $0.id == context.term.id }?.meetings.first { $0.id == meeting.id }?.showInMonth == true
                     }, set: { visible in
@@ -94,6 +95,7 @@ struct ScheduleMeetingSheet: View {
                     switch item {
                     case .task(let task): TaskEditor(task: task, isNew: true, compact: true, calendar: TimetableTerm.academicCalendar)
                     case .edit: ScheduleEditSheet(context: context, onSaved: { dismiss() })
+                    case .color: MeetingPlanColorEditor(context: context)
                     }
                 }.environmentObject(store)
                     .environment(\.calendar, TimetableTerm.academicCalendar)
@@ -109,8 +111,44 @@ struct ScheduleMeetingSheet: View {
 }
 
 private enum MeetingPanel: Identifiable {
-    case task(StudyTask), edit
+    case task(StudyTask), edit, color
     var id: String {
-        switch self { case .task(let task): return task.id.uuidString; case .edit: return "edit" }
+        switch self { case .task(let task): return task.id.uuidString; case .edit: return "edit"; case .color: return "color" }
+    }
+}
+
+private struct MeetingPlanColorEditor: View {
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    @ViewState private var colorHex: String?
+    let context: ScheduleMeetingContext
+
+    init(context: ScheduleMeetingContext) {
+        self.context = context
+        _colorHex = ViewState(initialValue: context.meeting.colorHex)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("计划颜色").font(.title2.weight(.semibold))
+            Text("应用于这个上课时段的所有周次及临时调整。其他上课时段保留自己的颜色。")
+                .font(.callout).foregroundStyle(.secondary)
+            PlanColorControl(colorHex: $colorHex, inheritedHex: store.state.courses.first { $0.id == context.meeting.courseID }?.colorHex ?? store.effectiveAccentHex)
+            Divider()
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("保存颜色") {
+                    if store.changeTimetable(termID: context.term.id, label: "更改计划颜色", action: {
+                        try $0.setTimetableMeetingColor(termID: context.term.id, meetingID: context.meeting.id, hex: colorHex)
+                    }) { dismiss() }
+                }.appPrimaryButton().disabled(colorHex.map { RGBColor(hex: $0) == nil } ?? false)
+            }
+        }.padding(24).frame(width: 450)
+            .onAppear {
+                let term = store.state.timetableTerms.first { $0.id == context.term.id }
+                if let master = term?.meetings.first(where: { $0.id == context.meeting.id }) { colorHex = master.colorHex }
+                else { colorHex = term?.reschedules.first { $0.meetingID == context.meeting.id }?.meeting.colorHex }
+            }
     }
 }

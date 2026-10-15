@@ -27,6 +27,7 @@ public enum PlanEditScope: String, Codable, CaseIterable, Hashable, Sendable {
 public enum PlanDetailField: String, Codable, Hashable, Sendable {
     case title, content, kind, courseID, materialIDs, hasExecutionTime, startsAt, endsAt, deadline
     case location, isAllDay, deadlineIsAllDay, showInMonth, completionRequired
+    case colorHex
 }
 
 public struct PlanDetails: Codable, Hashable, Sendable {
@@ -45,6 +46,7 @@ public struct PlanDetails: Codable, Hashable, Sendable {
     public var deadlineIsAllDay: Bool
     public var showInMonth: Bool
     public var completionRequired: Bool
+    public var colorHex: String?
     /// Nil supports an explicit complete replacement. Repository edits record
     /// only changed fields, so unrelated later group edits still propagate.
     public var overriddenFields: Set<PlanDetailField>?
@@ -53,6 +55,7 @@ public struct PlanDetails: Codable, Hashable, Sendable {
         materialIDs = plan.materialIDs; hasExecutionTime = plan.hasExecutionTime; startsAt = plan.startsAt
         endsAt = plan.endsAt; deadline = plan.deadline; location = plan.location; isAllDay = plan.isAllDay
         deadlineIsAllDay = plan.deadlineIsAllDay; showInMonth = plan.showInMonth; completionRequired = plan.completionRequired
+        colorHex = plan.colorHex
         if let base {
             var fields = Set<PlanDetailField>()
             if plan.title != base.title { fields.insert(.title) }
@@ -69,6 +72,7 @@ public struct PlanDetails: Codable, Hashable, Sendable {
             if plan.deadlineIsAllDay != base.deadlineIsAllDay { fields.insert(.deadlineIsAllDay) }
             if plan.showInMonth != base.showInMonth { fields.insert(.showInMonth) }
             if plan.completionRequired != base.completionRequired { fields.insert(.completionRequired) }
+            if plan.colorHex != base.colorHex { fields.insert(.colorHex) }
             overriddenFields = fields
         }
     }
@@ -88,6 +92,7 @@ public struct PlanDetails: Codable, Hashable, Sendable {
         if includes(.deadlineIsAllDay) { plan.deadlineIsAllDay = deadlineIsAllDay }
         if includes(.showInMonth) { plan.showInMonth = showInMonth }
         if includes(.completionRequired) { plan.completionRequired = completionRequired }
+        if overriddenFields?.contains(.colorHex) == true || (overriddenFields == nil && colorHex != nil) { plan.colorHex = colorHex }
     }
 }
 

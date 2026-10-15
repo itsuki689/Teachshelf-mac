@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import TeachshelfCore
 
 /// Seven complete days in one bounded canvas. There is deliberately no scroll
@@ -14,10 +15,12 @@ struct ScheduleWeekView: View {
     let onPlan: (PlanOccurrence) -> Void
     let onCreate: (Date, Date) -> Void
     @ViewState private var drag: WeekPlanDrag?
+    @ViewState private var resize: WeekPlanResize?
     @ViewState private var creation: WeekCreation?
     @ViewState private var cancelledDrag = false
     @ViewState private var lastDragEnded = Date.distantPast
     @GestureState private var gestureActive = false
+    @FocusState private var keyboardFocused: Bool
 
     private let calendar = TimetableCalendar.calendar
     private let weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
@@ -47,10 +50,12 @@ struct ScheduleWeekView: View {
             .padding(.vertical, metrics.verticalInset)
         }
         .clipped()
+        .focusable().focusEffectDisabled().focused($keyboardFocused)
+        .onKeyPress(phases: [.down, .repeat], action: handleKey)
         .onExitCommand {
             cancelledDrag = true; creation = nil; cancelDrag()
         }
-        .onDisappear { drag = nil; creation = nil }
+        .onDisappear { drag = nil; resize = nil; creation = nil; selection.timePreview = nil }
         .onChange(of: adjusting) { _, _ in cancelDrag() }
         .onChange(of: selection.selectedDate) { _, _ in cancelDrag(); creation = nil }
         .onChange(of: selection.termID) { _, _ in cancelDrag(); creation = nil }
@@ -113,9 +118,15 @@ struct ScheduleWeekView: View {
                 .frame(width: metrics.columnWidth, height: metrics.headerHeight)
                 .foregroundStyle(isToday ? Color.white : Color.primary)
                 .contentShape(Rectangle())
-                .background(isToday ? theme.controlAccent : (selected ? theme.selection : .clear))
+                .background(isToday ? theme.controlAccent : (selected ? theme.controlAccent.opacity(0.20) : .clear))
+                .overlay {
+                    if selected {
+                        Rectangle().strokeBorder(isToday ? Color.white.opacity(0.95) : theme.controlAccent, lineWidth: 2)
+                            .padding(isToday ? 2 : 0).allowsHitTesting(false)
+                    }
+                }
                 .overlay(alignment: .bottom) {
-                    if selected && !isToday { Rectangle().fill(theme.ink).frame(height: 2) }
+                    if selected { Rectangle().fill(isToday ? Color.white : theme.ink).frame(height: 3) }
                 }
             }
         }
@@ -179,7 +190,8 @@ struct ScheduleWeekView: View {
             }
             ForEach(0..<7, id: \.self) { index in
                 if let date = dayDate(index), calendar.isDate(date, inSameDayAs: selection.selectedDate) {
-                    Rectangle().fill(theme.ink.opacity(0.025))
+                    Rectangle().fill(theme.ink.opacity(theme.isDark ? 0.12 : 0.075))
+                        .overlay { Rectangle().strokeBorder(theme.controlAccent.opacity(0.5), lineWidth: 1.5) }
                         .frame(width: metrics.columnWidth, height: timeline.height)
                         .offset(x: metrics.labelWidth + CGFloat(index) * metrics.columnWidth)
                 }
@@ -196,7 +208,7 @@ struct ScheduleWeekView: View {
                 if sectionTimes.contains(where: { $0.section == time.section }) || term == nil {
                     clockTick(time.startMinute, y: top, metrics: metrics)
                 }
-                Text("第 \(time.section) 节").font(.system(size: 12, weight: .medium))
+                Text("\(time.section)").font(.system(size: 13, weight: .semibold)).monospacedDigit()
                     .foregroundStyle(.secondary)
                     .frame(width: metrics.sectionColumnWidth, height: max(1, bottom - top))
                     .offset(x: metrics.timeColumnWidth, y: top)
@@ -246,23 +258,84 @@ struct ScheduleWeekView: View {
 
     private func timedCard(_ event: PlanDisplayEvent, day: Date, index: Int, lane: ScheduleWeekLane,
                            metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> some View {
-        let vertical = timeRect(event, day: day, timeline: timeline)
+        let vertical: CGRect
+        if let resize, resize.event.id == event.id {
+            vertical = timeline.intervalRect(start: Double(resize.target.start), end: Double(resize.target.end), minimumHeight: 13)
+        } else { vertical = timeRect(event, day: day, timeline: timeline) }
         let rect = metrics.eventRect(dayIndex: index, lane: lane.lane, laneCount: lane.laneCount,
                                      top: vertical.minY, height: vertical.height)
+        let selected = selection.selectedEventID == event.id
         let card = Button {
-            guard drag == nil, Date().timeIntervalSince(lastDragEnded) > 0.15 else { return }
-            open(event)
-        } label: { cardContent(event, size: rect.size) }
+            guard drag == nil, resize == nil, Date().timeIntervalSince(lastDragEnded) > 0.15 else { return }
+            select(event)
+        } label: {
+            cardContent(event, size: rect.size)
+                .overlay {
+                    if selected {
+                        RoundedRectangle(cornerRadius: event.planOccurrence == nil ? 0 : 5)
+                            .strokeBorder(theme.controlAccent, lineWidth: 2).allowsHitTesting(false)
+                    }
+                }
+        }
         .buttonStyle(.plain).frame(width: rect.width, height: rect.height)
         .opacity(drag?.event.id == event.id ? 0.16 : 1)
-        .help("\(event.title) · \(event.timeLabel)\(event.location.isEmpty ? "" : " · \(event.location)")\(canDrag(event) ? " · 拖动调整本次安排" : " · 开启编辑固定计划后可拖动")")
+        .help("\(event.title) · \(event.timeLabel) · 单击选中，双击编辑\(canDrag(event) ? " · 拖动调整，上下边缘改变时间" : ScheduleEventEditing.range(of: event) == nil ? " · 请在详情中调整时间" : " · 开启编辑固定计划后可调整")")
         .accessibilityLabel("\(event.title)，\(event.timeLabel)，\(event.location)")
+        .accessibilityValue(selected ? "已选中，可用方向键移动" : "未选中")
+        .simultaneousGesture(TapGesture(count: 2).onEnded { open(event) })
         .contextMenu { Button("查看与编辑…") { open(event) } }
         return Group {
             if canDrag(event) { card.highPriorityGesture(eventDrag(event, sourceRect: rect, metrics: metrics, timeline: timeline)) }
             else { card }
         }
+        .overlay(alignment: .top) {
+            if selected, canDrag(event), rect.height >= 12 { resizeHandle(event, edge: .start, timeline: timeline) }
+        }
+        .overlay(alignment: .bottom) {
+            if selected, canDrag(event), rect.height >= 12 { resizeHandle(event, edge: .end, timeline: timeline) }
+        }
         .offset(x: rect.minX, y: rect.minY)
+    }
+
+    private func select(_ event: PlanDisplayEvent) {
+        selection.timePreview = nil
+        selection.setDate(event.date)
+        selection.selectedEventID = event.id
+        keyboardFocused = true
+    }
+
+    private func handleKey(_ press: KeyPress) -> KeyPress.Result {
+        ScheduleEventEditing.handleKey(press, store: store, fixedEditing: adjusting)
+    }
+
+    private func resizeHandle(_ event: PlanDisplayEvent, edge: PlanTimeEdge, timeline: ScheduleWeekTimeline) -> some View {
+        Color.clear.frame(height: 6).contentShape(Rectangle())
+            .overlay { Capsule().fill(theme.controlAccent).frame(width: 15, height: 2) }
+            .onHover { hovering in if hovering { NSCursor.resizeUpDown.push() } else { NSCursor.pop() } }
+            .highPriorityGesture(DragGesture(minimumDistance: 2, coordinateSpace: .named("ScheduleWeekCanvas"))
+                .updating($gestureActive) { _, active, _ in active = true }
+                .onChanged { value in
+                    guard canDrag(event), !cancelledDrag, !store.isBusy, let original = ScheduleEventEditing.range(of: event) else { return }
+                    if resize == nil { select(event) }
+                    let initialY = timeline.y(for: Double(edge == .start ? original.start : original.end))
+                    let position = max(0, min(timeline.height - 0.001, initialY + value.translation.height))
+                    guard let minute = timeline.minute(at: position, snapping: 1) else { return }
+                    resize = WeekPlanResize(event: event, target: original.resized(edge, to: minute))
+                    selection.timePreview = resize?.target
+                }
+                .onEnded { _ in
+                    lastDragEnded = Date()
+                    defer { resize = nil; selection.timePreview = nil }
+                    guard !cancelledDrag, let current = resize else { return }
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.85)) {
+                        ScheduleEventEditing.apply(current.target, to: current.event, on: current.event.date,
+                                                   store: store, fixedEditing: adjusting)
+                    }
+                })
+            .accessibilityElement().accessibilityLabel(edge == .start ? "调整开始边界" : "调整结束边界")
+            .accessibilityAdjustableAction { direction in
+                ScheduleEventEditing.nudge(event, minutes: direction == .increment ? 1 : -1, edge: edge, store: store, fixedEditing: adjusting)
+            }
     }
 
     private func cardContent(_ event: PlanDisplayEvent, size: CGSize) -> some View {
@@ -316,10 +389,8 @@ struct ScheduleWeekView: View {
     }
 
     private func timeRect(_ event: PlanDisplayEvent, day: Date, timeline: ScheduleWeekTimeline) -> CGRect {
-        if case .course(let course) = event.source,
-           let rect = timeline.sectionRect(start: course.meeting.startSection, count: course.meeting.sectionCount) {
-            return rect
-        }
+        if case .course(let course) = event.source, event.endDate == nil,
+           let rect = timeline.sectionRect(start: course.meeting.startSection, count: course.meeting.sectionCount) { return rect }
         let midnight = calendar.startOfDay(for: day)
         let start = max(0, event.date.timeIntervalSince(midnight) / 60)
         let end = min(1440, (event.endDate ?? event.date.addingTimeInterval(30 * 60)).timeIntervalSince(midnight) / 60)
@@ -341,6 +412,7 @@ struct ScheduleWeekView: View {
                 updated.translation = value.translation
                 updated.target = dropTarget(event, point: value.location, grabOffset: updated.grabOffsetY,
                                             metrics: metrics, timeline: timeline)
+                selection.timePreview = selection.selectedEventID == event.id ? updated.target?.range : nil
                 drag = updated
             }
             .onEnded { value in
@@ -361,47 +433,19 @@ struct ScheduleWeekView: View {
               point.y >= 0, point.y < timeline.height else { return nil }
         let index = Int((point.x - metrics.labelWidth) / metrics.columnWidth)
         let day = days[index]
-        let y = point.y - grabOffset
-        if case .course(let course) = event.source {
-            guard let term = store.state.timetableTerms.first(where: { $0.id == course.termID }), term.week(containing: day) != nil,
-                  let section = timeline.section(at: max(0, min(timeline.height - 0.001, y)), duration: course.meeting.sectionCount) else { return nil }
-            return WeekPlanDrop(date: day, dayIndex: index, startSection: section)
-        }
-        guard let minute = timeline.minute(at: max(0, min(timeline.height - 0.001, y))),
-              let date = calendar.date(byAdding: .minute, value: minute, to: day) else { return nil }
-        return WeekPlanDrop(date: date, dayIndex: index, startSection: nil)
+        guard let range = ScheduleEventEditing.range(of: event) else { return nil }
+        let y = max(0, min(timeline.height - 0.001, point.y - grabOffset))
+        guard let minute = timeline.minute(at: y, snapping: 1) else { return nil }
+        return WeekPlanDrop(date: day, dayIndex: index, range: range.moved(to: minute))
     }
 
     private func finishDrag(_ completed: WeekPlanDrag) {
+        defer { selection.timePreview = nil }
         guard canDrag(completed.event), let target = completed.target else { cancelDrag(); return }
-        let event = completed.event
-        var saved = false
         withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82)) {
-            switch event.source {
-            case .course(let course):
-                guard let section = target.startSection else { break }
-                if calendar.isDate(course.day, inSameDayAs: target.date), course.meeting.startSection == section { break }
-                saved = store.changeTimetable(termID: course.termID, label: "移动《\(event.title)》本次安排") { repository in
-                    try repository.rescheduleTimetableClass(termID: course.termID, meetingID: course.meeting.id,
-                        originalDate: course.originalDate, to: target.date, startSection: section,
-                        sectionCount: course.meeting.sectionCount, classroom: course.meeting.classroom)
-                }
-            case .plan(let occurrence):
-                // Clipped multi-day cards retain the effective start clock when
-                // moved to another day, rather than truncating their duration.
-                var destination = target.date
-                if !occurrence.isDeadline, occurrence.task.startsAt < occurrence.date {
-                    let delta = occurrence.date.timeIntervalSince(occurrence.task.startsAt)
-                    destination = destination.addingTimeInterval(-delta)
-                }
-                saved = store.changePlan(id: occurrence.task.id, label: event.isDeadline ? "移动截止时间" : "移动《\(event.title)》本次安排") { repository in
-                    try repository.movePlanOccurrence(id: occurrence.task.id, originalDate: occurrence.originalDate,
-                        isDeadline: occurrence.isDeadline, to: destination)
-                }
-            }
-            if saved { drag = nil; selection.setDate(target.date) }
+            if ScheduleEventEditing.apply(target.range, to: completed.event, on: target.date, store: store, fixedEditing: adjusting) { drag = nil }
         }
-        if !saved { cancelDrag() }
+        if drag != nil { cancelDrag() }
     }
 
     @ViewBuilder private func targetPreview(_ metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> some View {
@@ -411,7 +455,7 @@ struct ScheduleWeekView: View {
             shape.fill(theme.ink.opacity(0.10))
                 .overlay { shape.strokeBorder(theme.ink, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])) }
                 .overlay(alignment: .topLeading) {
-                    Text(target.startSection.map { "第 \($0) 节" } ?? (current.event.isDeadline ? "截止" : TimetableCalendar.formatted(target.date, template: "HHmm")))
+                    Text("\(TimetableLayout.clock(target.range.start))–\(TimetableLayout.clock(target.range.end))")
                         .font(.system(size: 9, weight: .semibold)).padding(3)
                 }
                 .frame(width: rect.width, height: rect.height)
@@ -424,13 +468,7 @@ struct ScheduleWeekView: View {
                             metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> CGRect {
         let column = metrics.eventRect(dayIndex: target.dayIndex, top: 0, height: 0)
         let x = column.minX, width = column.width
-        if case .course(let course) = event.source, let section = target.startSection,
-           let rect = timeline.sectionRect(start: section, count: course.meeting.sectionCount) {
-            return CGRect(x: x, y: rect.minY, width: width, height: rect.height)
-        }
-        let day = calendar.startOfDay(for: target.date), minute = target.date.timeIntervalSince(day) / 60
-        let duration = max(15, (event.endDate ?? event.date.addingTimeInterval(1800)).timeIntervalSince(event.date) / 60)
-        let rect = timeline.intervalRect(start: minute, end: min(1440, minute + duration), minimumHeight: 13)
+        let rect = timeline.intervalRect(start: Double(target.range.start), end: Double(target.range.end), minimumHeight: 13)
         return CGRect(x: x, y: rect.minY, width: width, height: rect.height)
     }
 
@@ -447,6 +485,8 @@ struct ScheduleWeekView: View {
     }
 
     private func cancelDrag() {
+        resize = nil
+        selection.timePreview = nil
         guard let current = drag, !current.isReturning else { return }
         lastDragEnded = Date()
         guard !reduceMotion else { drag = nil; return }
@@ -469,7 +509,7 @@ struct ScheduleWeekView: View {
                       let end = creationPoint(value.location, metrics: metrics, timeline: timeline),
                       start.index == end.index else { creation = nil; return }
                 creation = WeekCreation(dayIndex: start.index, startMinute: min(start.minute, end.minute),
-                                        endMinute: max(start.minute + 15, end.minute + 15))
+                                        endMinute: max(start.minute + 10, end.minute + 10))
             }
             .onEnded { value in
                 lastDragEnded = Date()
@@ -486,7 +526,7 @@ struct ScheduleWeekView: View {
     private func creationPoint(_ point: CGPoint, metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> (index: Int, minute: Int)? {
         guard days.count == 7, point.x.isFinite, metrics.columnWidth > 0,
               point.x >= metrics.labelWidth, point.x < metrics.labelWidth + 7 * metrics.columnWidth,
-              let minute = timeline.minute(at: point.y) else { return nil }
+              let minute = timeline.minute(at: point.y, snapping: 10) else { return nil }
         return (Int((point.x - metrics.labelWidth) / metrics.columnWidth), minute)
     }
 
@@ -502,7 +542,7 @@ struct ScheduleWeekView: View {
         }
     }
 
-    private func canDrag(_ event: PlanDisplayEvent) -> Bool { !isUndated && (!event.isFixed || adjusting) }
+    private func canDrag(_ event: PlanDisplayEvent) -> Bool { !isUndated && ScheduleEventEditing.canEdit(event, fixedEditing: adjusting) }
     private func dayDate(_ index: Int) -> Date? { days.indices.contains(index) ? days[index] : nil }
     private func bandEvents(on day: Date) -> [PlanDisplayEvent] {
         ScheduleData.planEvents(on: day, in: store.state, selection: selection).filter { $0.isDeadline || $0.isAllDay }
@@ -510,7 +550,7 @@ struct ScheduleWeekView: View {
     private func timedEvents(on day: Date) -> [PlanDisplayEvent] {
         ScheduleData.planEvents(on: day, in: store.state, selection: selection).filter { !$0.isDeadline && !$0.isAllDay }
     }
-    private func eventColor(_ event: PlanDisplayEvent) -> Color { eventColorForCourse(event.courseID) }
+    private func eventColor(_ event: PlanDisplayEvent) -> Color { ScheduleEventColor.event(event, in: store.state, theme: theme) }
     private func eventColorForCourse(_ id: UUID?) -> Color { id.map { store.courseColor($0) } ?? theme.ink }
     private func open(_ event: PlanDisplayEvent) {
         guard drag == nil, Date().timeIntervalSince(lastDragEnded) > 0.15 else { return }
@@ -559,11 +599,16 @@ private struct WeekPlanDrag {
 private struct WeekPlanDrop: Equatable {
     let date: Date
     let dayIndex: Int
-    let startSection: Int?
+    let range: PlanTimeRange
 }
 
 private struct WeekCreation {
     let dayIndex: Int
     let startMinute: Int
     let endMinute: Int
+}
+
+private struct WeekPlanResize {
+    let event: PlanDisplayEvent
+    let target: PlanTimeRange
 }

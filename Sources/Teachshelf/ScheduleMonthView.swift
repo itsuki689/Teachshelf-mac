@@ -64,7 +64,7 @@ struct ScheduleMonthView: View {
                         HStack(spacing: 4) {
                             Image(systemName: event.isDeadline ? "flag.fill" : "circle.fill")
                                 .font(.system(size: 8))
-                                .foregroundStyle(ScheduleEventColor.course(event.courseID, in: store.state, theme: theme))
+                                .foregroundStyle(ScheduleEventColor.event(event, in: store.state, theme: theme))
                             Text(event.title).font(.system(size: 11)).lineLimit(1)
                                 .strikethrough(event.isCompleted)
                                 .foregroundStyle(event.isCompleted ? Color.secondary : Color.primary)

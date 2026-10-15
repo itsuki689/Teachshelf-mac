@@ -511,6 +511,7 @@ extension LibraryRepository {
                 guard sessions.insert(sessionKey).inserted else { continue }
                 meeting.id = oldSessionIDs[sessionKey] ?? meeting.id
                 meeting.showInMonth = oldMonthFlags[sessionKey] ?? nil
+                meeting.colorHex = term.meetings.first { Self.timetableSessionKey($0) == sessionKey }?.colorHex
                 if oldMonthFlags[sessionKey] == nil {
                     let oldSlots = term.meetings.filter {
                         $0.courseID == meeting.courseID && $0.weekday == meeting.weekday &&
@@ -597,7 +598,7 @@ extension LibraryRepository {
         }
     }
 
-    public func rescheduleTimetableClass(termID: UUID, meetingID: UUID, originalDate: Date, to date: Date, startSection: Int, sectionCount: Int, classroom: String) throws {
+    public func rescheduleTimetableClass(termID: UUID, meetingID: UUID, originalDate: Date, to date: Date, startSection: Int, sectionCount: Int, classroom: String, startMinute: Int? = nil, endMinute: Int? = nil) throws {
         try withLock {
             guard [originalDate, date].allSatisfy({ $0.timeIntervalSinceReferenceDate.isFinite }) else { throw LibraryError.invalidInput("调课日期无效。") }
             guard let term = snapshot.timetableTerms.first(where: { $0.id == termID }) else { throw LibraryError.missingRecord("学期课表") }
@@ -614,14 +615,19 @@ extension LibraryRepository {
                 throw LibraryError.invalidInput("调课节次需在第 1–30 节内。")
             }
             let room = classroom.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard (startMinute == nil && endMinute == nil) || (startMinute.flatMap { start in endMinute.flatMap { PlanTimeRange(start: start, end: $0) } } != nil) else {
+                throw LibraryError.invalidInput("课程时间必须在同一天内，且结束晚于开始。")
+            }
             if let master, Self.isActualOccurrence(master, in: term, on: origin), origin == target,
-               master.startSection == startSection, master.sectionCount == sectionCount, master.classroom == room {
+               master.startSection == startSection, master.sectionCount == sectionCount, master.classroom == room,
+               (startMinute == nil && endMinute == nil || master.timeRange(sectionTimes: term.sectionTimes) == startMinute.flatMap { start in endMinute.flatMap { PlanTimeRange(start: start, end: $0) } }) {
                 if let existing { try restoreTimetableReschedule(termID: termID, rescheduleID: existing.id) }
                 return
             }
             var moved = source
             moved.id = meetingID; moved.weekday = (calendar.component(.weekday, from: target) + 5) % 7 + 1
             moved.weeks = [targetWeek]; moved.startSection = startSection; moved.sectionCount = sectionCount; moved.classroom = room
+            moved.startMinuteOverride = startMinute; moved.endMinuteOverride = endMinute
             let move = TimetableReschedule(id: existing?.id ?? UUID(), meetingID: meetingID, originalDate: origin, date: target, meeting: moved)
             if move == existing { return }
             try commit { state in
@@ -664,6 +670,26 @@ extension LibraryRepository {
                 }
             }
             state.timetableTerms[termIndex].meetings[meetingIndex] = meeting
+        }
+    }
+
+    public func setTimetableMeetingColor(termID: UUID, meetingID: UUID, hex: String?) throws {
+        let color: String?
+        if let hex {
+            guard let rgb = RGBColor(hex: hex) else { throw LibraryError.invalidInput("计划颜色须为六位 HEX 颜色。") }
+            color = rgb.hex
+        } else { color = nil }
+        try commit { state in
+            guard let index = state.timetableTerms.firstIndex(where: { $0.id == termID }) else { throw LibraryError.missingRecord("学期") }
+            for m in state.timetableTerms[index].meetings.indices where state.timetableTerms[index].meetings[m].id == meetingID {
+                state.timetableTerms[index].meetings[m].colorHex = color
+            }
+            for r in state.timetableTerms[index].reschedules.indices where state.timetableTerms[index].reschedules[r].meetingID == meetingID {
+                state.timetableTerms[index].reschedules[r].meeting.colorHex = color
+            }
+            for c in state.timetableTerms[index].cancellations.indices where state.timetableTerms[index].cancellations[c].meetingID == meetingID {
+                state.timetableTerms[index].cancellations[c].savedReschedule?.meeting.colorHex = color
+            }
         }
     }
 
@@ -752,6 +778,11 @@ extension LibraryRepository {
     }
 
     private static func validateTimetableMeeting(_ meeting: TimetableMeeting, weekCount: Int, courseIDs: Set<UUID>?) throws {
+        if let hex = meeting.colorHex, RGBColor(hex: hex) == nil { throw LibraryError.invalidInput("课程时段颜色无效。") }
+        if meeting.startMinuteOverride != nil || meeting.endMinuteOverride != nil {
+            guard let start = meeting.startMinuteOverride, let end = meeting.endMinuteOverride,
+                  PlanTimeRange(start: start, end: end) != nil else { throw LibraryError.invalidInput("课程时间须在同一天内。") }
+        }
         guard !meeting.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw LibraryError.invalidInput("课表课程名称不能为空。") }
         if let id = meeting.courseID, let courseIDs, !courseIDs.contains(id) { throw LibraryError.invalidInput("课表关联的课程不存在。") }
         let freeTime = (meeting.weekday == nil || meeting.weekday == 0) && meeting.startSection == 0 && meeting.sectionCount == 0
@@ -790,6 +821,7 @@ extension LibraryRepository {
         key.id = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
         key.courseID = nil
         key.showInMonth = nil
+        key.colorHex = nil; key.startMinuteOverride = nil; key.endMinuteOverride = nil
         return key
     }
 
@@ -1131,6 +1163,22 @@ extension LibraryRepository {
         }
     }
 
+    public func setPlanOccurrenceTime(id: UUID, originalDate: Date, day: Date, range: PlanTimeRange) throws {
+        try commit { state in
+            let index = try Self.editablePlanIndex(id, in: state), parent = state.tasks[index]
+            try Self.requireOccurrence(originalDate, of: parent)
+            let current = PlanCalendar.snapshot(of: parent, originalDate: originalDate)
+            guard current.hasExecutionTime, !current.isAllDay, day.timeIntervalSinceReferenceDate.isFinite else {
+                throw LibraryError.invalidInput("请选择有具体时段的计划。")
+            }
+            let midnight = PlanCalendar.calendar.startOfDay(for: day)
+            let start = midnight.addingTimeInterval(Double(range.start) * 60)
+            let end = midnight.addingTimeInterval(Double(range.end) * 60)
+            if parent.repeatRule == nil { state.tasks[index].startsAt = start; state.tasks[index].endsAt = end }
+            else { Self.editException(in: &state.tasks[index], on: originalDate) { $0.startsAt = start; $0.endsAt = end } }
+        }
+    }
+
     public func setPlanOccurrenceCompleted(id: UUID, originalDate: Date, completed: Bool) throws {
         try commit { state in
             let index = try Self.editablePlanIndex(id, in: state), parent = state.tasks[index]
@@ -1291,6 +1339,7 @@ extension LibraryRepository {
     }
     private static func normalizedPlan(_ plan: StudyTask, in state: LibraryState) -> StudyTask {
         var result = plan
+        if let hex = result.colorHex, let color = RGBColor(hex: hex) { result.colorHex = color.hex }
         result.materialIDs = Array(Set(result.materialIDs)).sorted { $0.uuidString < $1.uuidString }
         if let id = result.courseID { result.courseNameSnapshot = state.courses.first { $0.id == id }?.name }
         return result
@@ -1320,6 +1369,7 @@ extension LibraryRepository {
         }
     }
     private static func validatePlan(_ task: StudyTask, courseIDs: Set<UUID>, materialIDs: Set<UUID>) throws {
+        if let hex = task.colorHex, RGBColor(hex: hex) == nil { throw LibraryError.invalidInput("计划颜色须为六位 HEX 颜色。") }
         guard !task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw LibraryError.invalidInput("计划名称不能为空。") }
         guard [task.startsAt, task.endsAt, task.deadline, task.completedAt, task.archivedAt, task.cancelledAt, task.repeatRule?.until].compactMap({ $0 }).allSatisfy({ $0.timeIntervalSinceReferenceDate.isFinite }) else {
             throw LibraryError.invalidInput("计划包含无效日期。")

@@ -103,11 +103,22 @@ public struct TimetableMeeting: Identifiable, Codable, Hashable, Sendable {
     public var sectionCount: Int
     public var note: String
     public var showInMonth: Bool?
+    public var startMinuteOverride: Int?
+    public var endMinuteOverride: Int?
+    public var colorHex: String?
 
     public init(id: UUID = UUID(), courseID: UUID? = nil, courseCode: String = "", title: String, teacher: String = "", classroom: String = "", weeks: [Int], weekday: Int? = nil, startSection: Int = 0, sectionCount: Int = 0, note: String = "", showInMonth: Bool? = nil) {
         self.id = id; self.courseID = courseID; self.courseCode = courseCode; self.title = title
         self.teacher = teacher; self.classroom = classroom; self.weeks = weeks; self.weekday = weekday
         self.startSection = startSection; self.sectionCount = sectionCount; self.note = note; self.showInMonth = showInMonth
+    }
+
+    public func timeRange(sectionTimes: [TimetableSectionTime]) -> PlanTimeRange? {
+        guard isScheduled else { return nil }
+        let start = startMinuteOverride ?? sectionTimes.first { $0.section == startSection }?.startMinute
+        let end = endMinuteOverride ?? sectionTimes.first { $0.section == endSection }?.endMinute
+        guard let start, let end else { return nil }
+        return PlanTimeRange(start: start, end: end)
     }
 
     public var isScheduled: Bool { weekday.map { (1...7).contains($0) } == true && startSection > 0 && sectionCount > 0 }

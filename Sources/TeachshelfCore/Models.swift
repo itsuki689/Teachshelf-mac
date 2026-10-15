@@ -82,8 +82,9 @@ public struct StudyTask: Identifiable, Codable, Hashable, Sendable {
     public var cancelledAt: Date?
     public var deadlineIsAllDay: Bool
     public var exceptions: [PlanException]
+    public var colorHex: String?
 
-    public init(id: UUID = UUID(), title: String, content: String = "", kind: String = "任务", courseID: UUID? = nil, materialIDs: [UUID] = [], startsAt: Date = Date(), deadline: Date? = nil, isAllDay: Bool = true, showOnCalendar: Bool = true, completedAt: Date? = nil, archivedAt: Date? = nil, courseNameSnapshot: String? = nil, origin: PlanOrigin = .activity, hasExecutionTime: Bool = true, endsAt: Date? = nil, location: String = "", showInMonth: Bool = false, repeatRule: PlanRepeatRule? = nil, completionRequired: Bool = true, cancelledAt: Date? = nil, deadlineIsAllDay: Bool = true, exceptions: [PlanException] = []) {
+    public init(id: UUID = UUID(), title: String, content: String = "", kind: String = "任务", courseID: UUID? = nil, materialIDs: [UUID] = [], startsAt: Date = Date(), deadline: Date? = nil, isAllDay: Bool = true, showOnCalendar: Bool = true, completedAt: Date? = nil, archivedAt: Date? = nil, courseNameSnapshot: String? = nil, origin: PlanOrigin = .activity, hasExecutionTime: Bool = true, endsAt: Date? = nil, location: String = "", showInMonth: Bool = false, repeatRule: PlanRepeatRule? = nil, completionRequired: Bool = true, cancelledAt: Date? = nil, deadlineIsAllDay: Bool = true, exceptions: [PlanException] = [], colorHex: String? = nil) {
         self.id = id; self.title = title; self.content = content; self.kind = kind
         self.courseID = courseID; self.materialIDs = materialIDs; self.startsAt = startsAt
         self.deadline = deadline; self.isAllDay = isAllDay; self.showOnCalendar = showOnCalendar
@@ -92,6 +93,7 @@ public struct StudyTask: Identifiable, Codable, Hashable, Sendable {
         self.location = location; self.showInMonth = showInMonth; self.repeatRule = repeatRule
         self.completionRequired = completionRequired; self.cancelledAt = cancelledAt
         self.deadlineIsAllDay = deadlineIsAllDay; self.exceptions = exceptions
+        self.colorHex = colorHex
     }
     public var isCompleted: Bool { completedAt != nil }
     public var isArchived: Bool { archivedAt != nil }
@@ -101,6 +103,7 @@ public struct StudyTask: Identifiable, Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, title, content, kind, courseID, materialIDs, startsAt, deadline, isAllDay, showOnCalendar, completedAt, archivedAt, courseNameSnapshot
         case origin, hasExecutionTime, endsAt, location, showInMonth, repeatRule, completionRequired, cancelledAt, deadlineIsAllDay, exceptions
+        case colorHex
     }
     public init(from decoder: Decoder) throws {
         let v = try decoder.container(keyedBy: CodingKeys.self)
@@ -124,6 +127,7 @@ public struct StudyTask: Identifiable, Codable, Hashable, Sendable {
         cancelledAt = try v.decodeIfPresent(Date.self, forKey: .cancelledAt)
         deadlineIsAllDay = v.contains(.deadlineIsAllDay) ? try v.decode(Bool.self, forKey: .deadlineIsAllDay) : isAllDay
         exceptions = v.contains(.exceptions) ? try v.decode([PlanException].self, forKey: .exceptions) : []
+        colorHex = try v.decodeIfPresent(String.self, forKey: .colorHex)
     }
 }
 
