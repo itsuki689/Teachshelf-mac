@@ -21,6 +21,11 @@ struct TaskWorkspace: View {
     @ViewState<Bool> private var creating = false
     @ViewState<Bool> private var confirmingDeletion = false
 
+    init(courseID: UUID? = nil, pendingOnly: Bool = false) {
+        _courseID = ViewState(initialValue: courseID)
+        _filter = ViewState(initialValue: pendingOnly ? .pending : .active)
+    }
+
     private var tasks: [StudyTask] {
         store.state.tasks.filter { parent in
             let variants = [parent] + parent.exceptions.map { PlanCalendar.snapshot(of: parent, originalDate: $0.originalDate) }
@@ -318,5 +323,22 @@ struct TaskWorkspace: View {
             try repository.deleteTasks(ids: ids)
         }
         if saved { selection = [] }
+    }
+}
+
+struct PlanListSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    var courseID: UUID? = nil
+    var pendingOnly = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            TaskWorkspace(courseID: courseID, pendingOnly: pendingOnly)
+            Divider()
+            HStack {
+                Spacer()
+                Button("完成") { dismiss() }.keyboardShortcut(.cancelAction)
+            }.padding(12)
+        }.frame(width: 900, height: 650)
     }
 }

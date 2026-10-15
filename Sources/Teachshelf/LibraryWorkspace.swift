@@ -10,6 +10,7 @@ struct LibraryWorkspace: View {
     @AppStorage("libraryPresentation") private var presentation = "list"
     @ViewState private var dropTarget = false
     @ViewState private var showInspector = true
+    @ViewState private var showingCoursePlans = false
     private var items: [MaterialRecord] { store.visibleMaterials }
     private var inspectorVisible: Bool { showInspector && store.selectedMaterial != nil }
 
@@ -23,7 +24,7 @@ struct LibraryWorkspace: View {
                         Label("\(tasks.count) 个待完成计划", systemImage: "checklist").font(.caption.weight(.medium)).foregroundStyle(.primary)
                         Text(tasks.prefix(2).map(\.title).joined(separator: "  ·  ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         Spacer()
-                        Button("查看计划") { store.navigate(to: .tasks) }.buttonStyle(.plain).foregroundStyle(theme.ink).font(.caption)
+                        Button("查看计划") { showingCoursePlans = true }.buttonStyle(.plain).foregroundStyle(theme.ink).font(.caption)
                     }.padding(.horizontal, 24).padding(.vertical, 10).background(theme.ink.opacity(0.06))
                 }
             }
@@ -71,6 +72,9 @@ struct LibraryWorkspace: View {
             return true
         }
         .onChange(of: store.selectedMaterialIDs) { _, ids in if !ids.isEmpty { showInspector = true } }
+        .sheet(isPresented: $showingCoursePlans) {
+            PlanListSheet(courseID: store.currentCourseID, pendingOnly: true)
+        }
     }
 
     private var commandBar: some View {

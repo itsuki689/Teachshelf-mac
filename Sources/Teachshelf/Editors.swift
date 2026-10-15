@@ -48,7 +48,7 @@ struct CourseEditor: View {
     private func delete() {
         guard let course else { return }
         let alert = NSAlert(); alert.messageText = "删除课程「\(course.name)」？"
-        alert.informativeText = "资料转为未分类，待办保留历史课程名称。作业文件夹与实际文件全部保留。"
+        alert.informativeText = "资料转为未分类，关联计划保留历史课程名称。作业文件夹与实际文件全部保留。"
         alert.addButton(withTitle: "删除课程"); alert.addButton(withTitle: "取消")
         if alert.runModal() == .alertFirstButtonReturn {
             do { try store.repository.deleteCourse(id: course.id); store.reload(); store.navigate(to: .unassigned); dismiss() }
@@ -148,7 +148,13 @@ struct MaterialInspector: View {
                     Label(material.isManaged ? "已复制到资料库" : "引用原文件", systemImage: material.isManaged ? "internaldrive" : "link")
                     Text(material.addedAt, format: .dateTime.year().month().day())
                 }.font(.caption).foregroundStyle(.secondary)
-                Button("创建关联待办") { if confirmEdits() { taskToCreate = StudyTask(title: "", courseID: material.courseID, materialIDs: [material.id]) } }.controlSize(.small)
+                Button("创建关联计划") {
+                    if confirmEdits() {
+                        taskToCreate = StudyTask(title: "", kind: "自主规划", courseID: material.courseID,
+                                                materialIDs: [material.id], hasExecutionTime: false,
+                                                completionRequired: false)
+                    }
+                }.controlSize(.small)
                 if !material.isManaged { Button("重新定位原文件…", action: relink).controlSize(.small) }
             }.padding(22)
         }.background(.bar)

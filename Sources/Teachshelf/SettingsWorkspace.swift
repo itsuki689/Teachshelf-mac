@@ -14,7 +14,7 @@ struct SettingsWorkspace: View {
                     Image(systemName: "books.vertical.fill").font(.system(size: 32)).foregroundStyle(theme.ink)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("你的学习空间").font(.system(size: 26, weight: .bold, design: .rounded))
-                        Text("Teachshelf for macOS · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.5.5")").font(.callout).foregroundStyle(.secondary)
+                        Text("Teachshelf for macOS · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.5.6")").font(.callout).foregroundStyle(.secondary)
                     }
                 }.padding(.bottom, 4)
                 settingsCard("外观", symbol: "paintpalette") {
@@ -108,7 +108,7 @@ struct SettingsWorkspace: View {
         panel.allowedContentTypes = [UTType(filenameExtension: "teachshelfbackup") ?? .package]
         panel.message = "选择 Teachshelf macOS 备份包"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let alert = NSAlert(); alert.messageText = "恢复此备份？"; alert.informativeText = "当前课程、资料和待办将由备份替换。现有文件及索引会保留在资料库的 History 中。"
+        let alert = NSAlert(); alert.messageText = "恢复此备份？"; alert.informativeText = "当前课程、资料和计划将由备份替换。现有文件及索引会保留在资料库的 History 中。"
         alert.addButton(withTitle: "恢复"); alert.addButton(withTitle: "取消")
         if alert.runModal() == .alertFirstButtonReturn {
             let repository = store.repository

@@ -97,12 +97,16 @@ struct ScheduleWeekTimeline {
     }
 
     /// Cards and their previews use the same coordinates as the clock ticks.
-    /// A compact card may grow downward for readability, but never moves its
-    /// start upward to make room near midnight.
+    /// A compact card may grow downward for readability within its visible
+    /// segment, keeping early/lunch plans out of the next teaching period.
     func intervalRect(start: Double, end: Double, minimumHeight: CGFloat = 0) -> CGRect {
         let top = y(for: start), bottom = y(for: max(start, end))
+        let containingSegment = segments.first {
+            start >= $0.start && start < $0.end && end <= $0.end && $0.upper > $0.lower
+        }
+        let limit = containingSegment?.upper ?? height
         return CGRect(x: 0, y: top, width: 0,
-                      height: min(max(0, height - top), max(minimumHeight, bottom - top)))
+                      height: min(max(0, limit - top), max(minimumHeight, bottom - top)))
     }
 
     func section(at y: CGFloat, duration: Int) -> Int? {

@@ -81,6 +81,24 @@ struct ScheduleWeekTimelineTests {
         #expect(abs(card.maxY - timeline.height) < 0.001)
     }
 
+    @Test func shortPlansBeforeClassDoNotCreateFalseCourseConflicts() throws {
+        for height: CGFloat in [468, 588] {
+            let timeline = ScheduleWeekTimeline(height: height, sectionCount: 11, times: [])
+            for (start, end, section) in [(360.0, 420.0, 1), (835.0, 839.0, 5)] {
+                let plan = timeline.intervalRect(start: start, end: end, minimumHeight: 13)
+                let course = try #require(timeline.sectionRect(start: section, count: 2))
+                #expect(plan.minY == timeline.y(for: start))
+                #expect(plan.height > 0)
+                #expect(plan.maxY <= course.minY)
+                let lanes = ScheduleWeekLanes.placements([
+                    .init(id: "plan", top: plan.minY, bottom: plan.maxY),
+                    .init(id: "course", top: course.minY, bottom: course.maxY)
+                ])
+                #expect(lanes.allSatisfy { $0.laneCount == 1 })
+            }
+        }
+    }
+
     @Test func smallBreaksCollapseAndTheirFormerHeightBelongsToLunch() throws {
         let timeline = ScheduleWeekTimeline(height: 468, sectionCount: 11, times: [])
         #expect(timeline.lunchBreak == 720..<840)

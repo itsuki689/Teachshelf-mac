@@ -285,14 +285,7 @@ private struct ScheduleContent: View {
             TaskEditor(task: task, isNew: isNew, compact: true, calendar: TimetableTerm.academicCalendar,
                        occurrence: occurrence, focusDeadline: occurrence?.isDeadline ?? false)
         case .list:
-            VStack(spacing: 0) {
-                TaskWorkspace()
-                Divider()
-                HStack {
-                    Spacer()
-                    Button("完成") { panel = nil }.keyboardShortcut(.cancelAction)
-                }.padding(12)
-            }.frame(width: 900, height: 650)
+            PlanListSheet()
         case .meeting(let context): ScheduleMeetingSheet(context: context)
         }
     }

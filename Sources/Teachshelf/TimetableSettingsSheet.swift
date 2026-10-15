@@ -56,7 +56,7 @@ struct TimetableSettingsSheet: View {
                     .environment(\.calendar, TimetableLayout.academicCalendar)
                     .environment(\.timeZone, TimetableLayout.academicCalendar.timeZone)
             }
-            Text("设置后可在日程的三种视图中同步查看课程与待办。按南京所在的北京时间计算周次。").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("设置后可在月／周／日计划视图中同步查看课程与其他安排。按南京所在的北京时间计算周次。").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             DisclosureGroup("按已知日期和周次推算") {
                 VStack(alignment: .leading, spacing: 12) {
                     DatePicker("参考日期", selection: $referenceDate, displayedComponents: .date)
@@ -87,7 +87,7 @@ struct TimetableSettingsSheet: View {
                 DatePicker("最后上课日期（含当天）", selection: $endDate, displayedComponents: .date)
                     .environment(\.calendar, TimetableLayout.academicCalendar)
                     .environment(\.timeZone, TimetableLayout.academicCalendar.timeZone)
-                Text("结束日期之后不再显示课程，个人待办可继续安排。")
+                Text("结束日期之后不再显示课程，个人计划可继续安排。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             rescheduleRecords
@@ -229,7 +229,7 @@ struct TimetableSettingsSheet: View {
     private func remove() {
         let alert = NSAlert()
         alert.messageText = "移除「\(term.name)」的课表？"
-        alert.informativeText = "仅移除上课时段与学期设置。课程、资料和待办会保留；可重新导入课表。"
+        alert.informativeText = "仅移除上课时段与学期设置。课程、资料和计划会保留；可重新导入课表。"
         alert.addButton(withTitle: "移除课表"); alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         do {
