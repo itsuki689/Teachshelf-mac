@@ -14,29 +14,40 @@ struct ScheduleAgendaView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(TimetableCalendar.formatted(selection.selectedDate, template: "MMM d EEEE"))
-                            .font(.title2.weight(.semibold))
-                        Text("\(events.filter { !$0.isDeadline }.count) 项安排 · \(events.filter(\.isDeadline).count) 个 DDL")
-                            .font(.caption).foregroundStyle(.secondary)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(TimetableCalendar.formatted(selection.selectedDate, template: "MMM d EEEE"))
+                                .font(.title2.weight(.semibold))
+                            Text("\(events.filter { !$0.isDeadline }.count) 项安排 · \(events.filter(\.isDeadline).count) 个 DDL")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        Button { onCreateTask(selection.selectedDate) } label: { Label("新建计划", systemImage: "plus") }
+                            .buttonStyle(.bordered)
+                    }.id("day-summary")
+                    if events.isEmpty {
+                        Text("这一天没有安排").foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 24)
+                    } else {
+                        ForEach(ScheduleDaySection.allCases) { section in
+                            eventSection(section.title, events: events.filter { $0.daySection == section })
+                                .id(section)
+                        }
                     }
-                    Spacer(minLength: 0)
-                    Button { onCreateTask(selection.selectedDate) } label: { Label("新建计划", systemImage: "plus") }
-                        .buttonStyle(.bordered)
-                }
-                if events.isEmpty {
-                    Text("这一天没有安排").foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 24)
-                } else {
-                    eventSection("全天", events: events.filter { !$0.isDeadline && $0.isAllDay })
-                    eventSection("时间安排", events: events.filter { !$0.isDeadline && !$0.isAllDay })
-                    eventSection("当天截止", events: events.filter(\.isDeadline))
-                }
-            }.frame(maxWidth: 900, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading).padding(22)
+                }.frame(maxWidth: 900, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading).padding(22)
+            }
+            .onAppear { scrollToSelection(proxy) }
+            .onChange(of: selection.agendaFocus) { _, _ in scrollToSelection(proxy) }
+            .onChange(of: selection.selectedDate) { _, _ in scrollToSelection(proxy) }
         }
+    }
+
+    private func scrollToSelection(_ proxy: ScrollViewProxy) {
+        if let focus = selection.agendaFocus { proxy.scrollTo(focus, anchor: .top) }
+        else { proxy.scrollTo("day-summary", anchor: .top) }
     }
 
     @ViewBuilder private func eventSection(_ title: String, events: [PlanDisplayEvent]) -> some View {

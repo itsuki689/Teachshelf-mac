@@ -23,7 +23,7 @@ struct ScheduleWeekTimeline {
         Array(Set(times.map(\.startMinute) + [lunchBreak?.lowerBound, times.last?.endMinute].compactMap { $0 })).sorted()
     }
 
-    init(height: CGFloat, sectionCount: Int, times supplied: [TimetableSectionTime]) {
+    init(height: CGFloat, sectionCount: Int, times supplied: [TimetableSectionTime], outerHoursExtraHeight: CGFloat = 0) {
         let resolvedHeight = height.isFinite ? max(0, height) : 0
         self.height = resolvedHeight
         let defaults = UndergraduateTimetableDefaults.sectionTimes
@@ -65,10 +65,15 @@ struct ScheduleWeekTimeline {
             return (Double(start), Double(end), weight)
         }
         let total = max(1, weighted.reduce(CGFloat.zero) { $0 + $1.2 })
+        let outerCount = weighted.filter { $0.1 <= Double(first) || $0.0 >= Double(last) }.count
+        let extra = outerCount > 0 && outerHoursExtraHeight.isFinite ? min(resolvedHeight, max(0, outerHoursExtraHeight)) : 0
         var offset: CGFloat = 0
         self.segments = weighted.map { start, end, weight in
             let lower = offset
-            offset += resolvedHeight * weight / total
+            offset += (resolvedHeight - extra) * weight / total
+            if end <= Double(first) || start >= Double(last) {
+                offset += extra / CGFloat(max(1, outerCount))
+            }
             return Segment(start: start, end: end, lower: lower, upper: offset)
         }
     }

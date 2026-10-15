@@ -6,7 +6,7 @@ struct ScheduleWeekMetrics {
     let horizontalInset: CGFloat
     let verticalInset: CGFloat
     let headerHeight: CGFloat
-    let allDayHeight: CGFloat
+    let outerHoursExtraHeight: CGFloat
     let labelWidth: CGFloat
     let timeColumnWidth: CGFloat
     let sectionColumnWidth: CGFloat
@@ -25,8 +25,8 @@ struct ScheduleWeekMetrics {
         sectionColumnWidth = max(0, labelWidth - timeColumnWidth)
         columnWidth = max(0, contentWidth - labelWidth) / 7
         headerHeight = min(44, contentHeight)
-        allDayHeight = min(42, max(0, contentHeight - headerHeight))
-        rowHeight = max(0, contentHeight - headerHeight - allDayHeight) / CGFloat(max(1, sectionCount))
+        outerHoursExtraHeight = min(42, max(0, contentHeight - headerHeight))
+        rowHeight = max(0, contentHeight - headerHeight) / CGFloat(max(1, sectionCount))
     }
 
     func eventRect(dayIndex: Int, lane: Int = 0, laneCount: Int = 1,

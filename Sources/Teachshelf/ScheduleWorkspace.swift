@@ -191,8 +191,8 @@ private struct ScheduleContent: View {
         VStack(alignment: .leading, spacing: 7) {
             Toggle("编辑固定计划", isOn: $adjusting).toggleStyle(.switch).controlSize(.small)
                 .disabled(!selection.showsCourses)
-                .help("开启后可拖动课程和 DDL；活动计划始终可以拖动")
-            Text("活动计划可直接拖动；空白处拖出“空”。课程和 DDL 需先开启编辑。")
+                .help("开启后可拖动课程；有具体时段的活动计划可直接拖动")
+            Text("时段计划可直接拖动，课程需先开启编辑。日期旁青点为全天、红点为 DDL，点击查看当天详情。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }

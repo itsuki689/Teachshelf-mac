@@ -9,7 +9,8 @@ struct ScheduleWeekTimelineTests {
         for size in [CGSize(width: 552, height: 570), CGSize(width: 752, height: 690)] {
             let metrics = ScheduleWeekMetrics(viewport: size, sectionCount: 11)
             let timeline = ScheduleWeekTimeline(height: metrics.rowHeight * 11,
-                sectionCount: 11, times: UndergraduateTimetableDefaults.sectionTimes)
+                sectionCount: 11, times: UndergraduateTimetableDefaults.sectionTimes,
+                outerHoursExtraHeight: metrics.outerHoursExtraHeight)
             #expect(timeline.times.count == 11)
             #expect(timeline.y(for: 0) == 0)
             #expect(abs(timeline.y(for: 1440) - timeline.height) < 0.001)
@@ -23,7 +24,7 @@ struct ScheduleWeekTimelineTests {
                 #expect(rect.minY >= 0 && rect.maxY <= timeline.height + 0.001)
                 #expect(timeline.section(at: rect.minY, duration: 1) == section)
             }
-            #expect(timeline.height + metrics.headerHeight + metrics.allDayHeight
+            #expect(timeline.height + metrics.headerHeight
                 + 2 * metrics.verticalInset <= size.height + 0.001)
         }
     }
@@ -79,6 +80,28 @@ struct ScheduleWeekTimelineTests {
         #expect(card.minY == timeline.y(for: 1425))
         #expect(card.height > 0 && card.height < 13)
         #expect(abs(card.maxY - timeline.height) < 0.001)
+    }
+
+    @Test func removedAllDayBandGivesEqualSpaceToEarlyAndNightWithoutChangingLessonsOrLunch() throws {
+        for viewport in [CGSize(width: 552, height: 570), CGSize(width: 752, height: 690)] {
+            let metrics = ScheduleWeekMetrics(viewport: viewport, sectionCount: 11)
+            let height = metrics.rowHeight * 11
+            let extra = metrics.outerHoursExtraHeight
+            let old = ScheduleWeekTimeline(height: height - extra, sectionCount: 11, times: [])
+            let current = ScheduleWeekTimeline(height: height, sectionCount: 11, times: [], outerHoursExtraHeight: extra)
+            #expect(abs(current.y(for: 480) - old.y(for: 480) - extra / 2) < 0.001)
+            #expect(abs((current.height - current.y(for: 1280)) - (old.height - old.y(for: 1280)) - extra / 2) < 0.001)
+            for section in 1...11 {
+                let oldRect = try #require(old.sectionRect(start: section, count: 1))
+                let newRect = try #require(current.sectionRect(start: section, count: 1))
+                #expect(abs(oldRect.height - newRect.height) < 0.001)
+                #expect(abs(newRect.minY - oldRect.minY - extra / 2) < 0.001)
+            }
+            #expect(abs((current.y(for: 840) - current.y(for: 720)) - (old.y(for: 840) - old.y(for: 720))) < 0.001)
+            for minute in [15, 375, 480, 780, 1320, 1425] {
+                #expect(current.minute(at: current.y(for: Double(minute))) == minute)
+            }
+        }
     }
 
     @Test func shortPlansBeforeClassDoNotCreateFalseCourseConflicts() throws {

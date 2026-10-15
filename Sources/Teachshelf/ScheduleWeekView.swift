@@ -31,16 +31,14 @@ struct ScheduleWeekView: View {
         GeometryReader { geometry in
             let metrics = ScheduleWeekMetrics(viewport: geometry.size, sectionCount: sections)
             let timeline = ScheduleWeekTimeline(height: metrics.rowHeight * CGFloat(sections),
-                                                sectionCount: sections, times: sectionTimes)
+                                                sectionCount: sections, times: sectionTimes,
+                                                outerHoursExtraHeight: metrics.outerHoursExtraHeight)
             VStack(spacing: 0) {
                 TimelineView(.periodic(from: Date(), by: 60)) { context in
                     weekdayHeader(metrics, now: context.date)
                 }
                 ZStack(alignment: .topLeading) {
-                    VStack(spacing: 0) {
-                        allDayBand(metrics)
-                        timeCanvas(metrics, timeline: timeline)
-                    }
+                    timeCanvas(metrics, timeline: timeline)
                     dragPreview
                 }
                 .coordinateSpace(name: "ScheduleWeekCanvas")
@@ -83,86 +81,58 @@ struct ScheduleWeekView: View {
                 let date = dayDate(index)
                 let selected = date.map { calendar.isDate($0, inSameDayAs: selection.selectedDate) } ?? false
                 let isToday = date.map { calendar.isDate($0, inSameDayAs: now) } ?? false
-                Button {
-                    if let date { selection.setDate(date) }
-                } label: {
-                    VStack(spacing: 4) {
+                let events = date.map { bandEvents(on: $0) } ?? []
+                VStack(spacing: 4) {
+                    Button {
+                        if let date { selection.setDate(date) }
+                    } label: {
                         HStack(spacing: 4) {
                             Text(weekdays[index]).font(.system(size: 13, weight: .semibold))
                             if isToday {
                                 Circle().fill(Color.white).frame(width: 4, height: 4)
                             }
-                        }
-                        if let date {
-                            Text(TimetableLayout.dateLabel(date)).font(.system(size: 11))
-                                .foregroundStyle(isToday ? Color.white.opacity(0.9) : Color.secondary)
-                        }
+                        }.frame(maxWidth: .infinity).contentShape(Rectangle())
                     }
-                    .frame(width: metrics.columnWidth, height: metrics.headerHeight)
-                    .foregroundStyle(isToday ? Color.white : Color.primary)
-                    .contentShape(Rectangle())
-                    .background(isToday ? theme.controlAccent : (selected ? theme.selection : .clear))
-                    .overlay(alignment: .bottom) {
-                        if selected && !isToday { Rectangle().fill(theme.ink).frame(height: 2) }
+                    .disabled(date == nil)
+                    .accessibilityLabel(date.map { TimetableCalendar.formatted($0, template: "MMM d EEEE") } ?? weekdays[index])
+                    .accessibilityValue([isToday ? "今天" : nil, selected ? "已选择" : nil].compactMap { $0 }.joined(separator: "，"))
+                    if let date {
+                        HStack(spacing: 2) {
+                            Button { selection.setDate(date) } label: {
+                                Text(TimetableLayout.dateLabel(date)).font(.system(size: 11))
+                                    .foregroundStyle(isToday ? Color.white.opacity(0.9) : Color.secondary)
+                            }.accessibilityLabel("选择 \(TimetableCalendar.formatted(date, template: "MMM d"))")
+                            HStack(spacing: 0) {
+                                dayMarker(.allDay, events: events, date: date)
+                                dayMarker(.deadlines, events: events, date: date)
+                            }
+                        }
                     }
                 }
                 .buttonStyle(.plain).disabled(date == nil)
-                .accessibilityLabel(date.map { TimetableCalendar.formatted($0, template: "MMM d EEEE") } ?? weekdays[index])
-                .accessibilityValue([isToday ? "今天" : nil, selected ? "已选择" : nil].compactMap { $0 }.joined(separator: "，"))
-            }
-        }
-    }
-
-    private func allDayBand(_ metrics: ScheduleWeekMetrics) -> some View {
-        HStack(spacing: 0) {
-            Text("全天\n截止").font(.system(size: 11)).foregroundStyle(.secondary)
-                .frame(width: metrics.labelWidth, height: metrics.allDayHeight)
-            ForEach(0..<7, id: \.self) { index in
-                let events = dayDate(index).map { bandEvents(on: $0) } ?? []
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(events.prefix(2).enumerated()), id: \.element.id) { row, event in
-                        bandCard(event, index: index, row: row, metrics: metrics)
-                    }
-                    if events.count > 2 {
-                        Menu {
-                            ForEach(events.dropFirst(2)) { event in
-                                Button("\(event.isDeadline ? "DDL · " : "")\(event.title)") { open(event) }
-                            }
-                        } label: { Text("另 \(events.count - 2) 项").font(.system(size: 9)).foregroundStyle(theme.ink) }
-                        .menuStyle(.borderlessButton).controlSize(.mini).fixedSize().frame(height: 10)
-                    }
-                    Spacer(minLength: 0)
+                .frame(width: metrics.columnWidth, height: metrics.headerHeight)
+                .foregroundStyle(isToday ? Color.white : Color.primary)
+                .contentShape(Rectangle())
+                .background(isToday ? theme.controlAccent : (selected ? theme.selection : .clear))
+                .overlay(alignment: .bottom) {
+                    if selected && !isToday { Rectangle().fill(theme.ink).frame(height: 2) }
                 }
-                .padding(.vertical, 2)
-                .frame(width: metrics.columnWidth, height: metrics.allDayHeight, alignment: .topLeading)
-                .background(Color.primary.opacity(0.018))
-                .overlay(alignment: .trailing) { Rectangle().fill(Color.primary.opacity(0.065)).frame(width: 1) }
             }
         }
-        .overlay(alignment: .bottom) { Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1) }
     }
 
-    private func bandCard(_ event: PlanDisplayEvent, index: Int, row: Int, metrics: ScheduleWeekMetrics) -> some View {
-        let rect = metrics.eventRect(dayIndex: index, top: CGFloat(row) * 14 + 2, height: 13)
-        let card = Button { open(event) } label: {
-            HStack(spacing: 2) {
-                if event.isDeadline { Text("DDL").font(.system(size: 7, weight: .bold)) }
-                Text(event.title).font(.system(size: 9, weight: .medium)).lineLimit(1)
-                Spacer(minLength: 0)
+    @ViewBuilder private func dayMarker(_ section: ScheduleDaySection, events: [PlanDisplayEvent], date: Date) -> some View {
+        let items = events.filter { $0.daySection == section }
+        if !items.isEmpty {
+            let title = section == .deadlines ? "DDL" : "全天计划"
+            Button { selection.showAgenda(on: date, section: section, in: store.state) } label: {
+                Circle().fill(section == .deadlines ? Color.red : Color.cyan)
+                    .overlay { Circle().strokeBorder(Color.white.opacity(0.7), lineWidth: 0.5) }
+                    .frame(width: 7, height: 7)
+                    .frame(width: 12, height: 14).contentShape(Rectangle())
             }
-            .foregroundStyle(event.isDeadline ? Color.orange : eventColor(event))
-            .padding(.horizontal, 3).frame(height: 13)
-            .background(eventColor(event).opacity(0.09), in: RoundedRectangle(cornerRadius: 3))
-        }
-        .buttonStyle(.plain).frame(width: rect.width, height: rect.height)
-        .opacity(drag?.event.id == event.id ? 0.2 : 1)
-        .help("\(event.isDeadline ? "截止 · " : "")\(event.title) · \(event.timeLabel)")
-        .accessibilityLabel("\(event.isDeadline ? "截止 " : "全天 ")\(event.title)，\(event.timeLabel)")
-        return Group {
-            if canDrag(event) {
-                card.highPriorityGesture(eventDrag(event, sourceRect: rect, metrics: metrics,
-                    timeline: ScheduleWeekTimeline(height: metrics.rowHeight * CGFloat(sections), sectionCount: sections, times: sectionTimes)))
-            } else { card }
+            .help("\(items.count) 项\(title)：\(items.map(\.title).joined(separator: "、"))。点击查看当天详情。")
+            .accessibilityLabel("\(TimetableCalendar.formatted(date, template: "MMM d"))，\(items.count) 项\(title)，跳转到日视图")
         }
     }
 
@@ -278,7 +248,7 @@ struct ScheduleWeekView: View {
                            metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> some View {
         let vertical = timeRect(event, day: day, timeline: timeline)
         let rect = metrics.eventRect(dayIndex: index, lane: lane.lane, laneCount: lane.laneCount,
-                                     top: vertical.minY + metrics.allDayHeight, height: vertical.height)
+                                     top: vertical.minY, height: vertical.height)
         let card = Button {
             guard drag == nil, Date().timeIntervalSince(lastDragEnded) > 0.15 else { return }
             open(event)
@@ -292,7 +262,7 @@ struct ScheduleWeekView: View {
             if canDrag(event) { card.highPriorityGesture(eventDrag(event, sourceRect: rect, metrics: metrics, timeline: timeline)) }
             else { card }
         }
-        .offset(x: rect.minX, y: rect.minY - metrics.allDayHeight)
+        .offset(x: rect.minX, y: rect.minY)
     }
 
     private func cardContent(_ event: PlanDisplayEvent, size: CGSize) -> some View {
@@ -388,16 +358,10 @@ struct ScheduleWeekView: View {
         guard !isUndated, days.count == 7, point.x.isFinite, point.y.isFinite,
               metrics.columnWidth > 0, point.x >= metrics.labelWidth,
               point.x < metrics.labelWidth + 7 * metrics.columnWidth,
-              point.y >= 0, point.y < metrics.allDayHeight + timeline.height else { return nil }
+              point.y >= 0, point.y < timeline.height else { return nil }
         let index = Int((point.x - metrics.labelWidth) / metrics.columnWidth)
         let day = days[index]
-        if event.isDeadline || event.isAllDay {
-            let time = calendar.dateComponents([.hour, .minute, .second], from: event.date)
-            let date = calendar.date(bySettingHour: time.hour ?? 0, minute: time.minute ?? 0, second: time.second ?? 0, of: day) ?? day
-            return WeekPlanDrop(date: date, dayIndex: index, startSection: nil)
-        }
-        let y = point.y - metrics.allDayHeight - grabOffset
-        guard point.y >= metrics.allDayHeight else { return nil }
+        let y = point.y - grabOffset
         if case .course(let course) = event.source {
             guard let term = store.state.timetableTerms.first(where: { $0.id == course.termID }), term.week(containing: day) != nil,
                   let section = timeline.section(at: max(0, min(timeline.height - 0.001, y)), duration: course.meeting.sectionCount) else { return nil }
@@ -460,11 +424,6 @@ struct ScheduleWeekView: View {
                             metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> CGRect {
         let column = metrics.eventRect(dayIndex: target.dayIndex, top: 0, height: 0)
         let x = column.minX, width = column.width
-        if event.isDeadline || event.isAllDay {
-            // This overlay lives inside the time canvas; the actual header is
-            // immediately above it, in the same unclipped outer coordinate space.
-            return CGRect(x: x, y: -metrics.allDayHeight + 2, width: width, height: metrics.allDayHeight - 4)
-        }
         if case .course(let course) = event.source, let section = target.startSection,
            let rect = timeline.sectionRect(start: section, count: course.meeting.sectionCount) {
             return CGRect(x: x, y: rect.minY, width: width, height: rect.height)
@@ -527,7 +486,7 @@ struct ScheduleWeekView: View {
     private func creationPoint(_ point: CGPoint, metrics: ScheduleWeekMetrics, timeline: ScheduleWeekTimeline) -> (index: Int, minute: Int)? {
         guard days.count == 7, point.x.isFinite, metrics.columnWidth > 0,
               point.x >= metrics.labelWidth, point.x < metrics.labelWidth + 7 * metrics.columnWidth,
-              let minute = timeline.minute(at: point.y - metrics.allDayHeight) else { return nil }
+              let minute = timeline.minute(at: point.y) else { return nil }
         return (Int((point.x - metrics.labelWidth) / metrics.columnWidth), minute)
     }
 

@@ -55,6 +55,13 @@ struct TaskEditor: View {
         }
     }
     private var hasValidTitle: Bool { !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var interactionHint: String {
+        if focusDeadline { return "固定 DDL · 修改会同步主计划的截止时间" }
+        let origin = draft.origin == .fixed ? "固定计划" : "活动计划"
+        if !draft.hasExecutionTime { return "\(origin) · 可稍后安排执行时间" }
+        if draft.isAllDay { return "\(origin) · 全天安排显示在日期旁的青色圆点中" }
+        return draft.origin == .fixed ? "固定计划 · 开启固定计划编辑后可拖曳" : "活动计划 · 可以直接拖曳调整"
+    }
     private var validationMessage: String? {
         if draft.hasExecutionTime && executionEnd < draft.startsAt { return "结束时间不能早于开始时间。" }
         if repeats && !draft.hasExecutionTime && !hasDeadline { return "重复计划需要执行时间或截止时间。" }
@@ -133,7 +140,7 @@ struct TaskEditor: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(isNew ? "新建计划" : focusDeadline ? "编辑截止安排" : "编辑计划")
                     .font(.title2.weight(.semibold))
-                Text(focusDeadline ? "固定 DDL · 修改会同步主计划的截止时间" : draft.origin == .fixed ? "固定计划 · 开启固定计划编辑后可拖曳" : "活动计划 · 可以直接拖曳调整")
+                Text(interactionHint)
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()

@@ -1,6 +1,18 @@
 import Foundation
 import TeachshelfCore
 
+enum ScheduleDaySection: String, CaseIterable, Identifiable {
+    case allDay, deadlines, timed
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .allDay: return "全天计划"
+        case .deadlines: return "当天截止"
+        case .timed: return "时间安排"
+        }
+    }
+}
+
 struct PlanDisplayEvent: Identifiable, Hashable {
     enum Source: Hashable {
         case course(TimetableCalendar.DayClass)
@@ -18,6 +30,7 @@ struct PlanDisplayEvent: Identifiable, Hashable {
     var isDeadline: Bool { if case .plan(let event) = source { return event.isDeadline }; return false }
     var isFixed: Bool { if case .plan(let event) = source { return event.isFixed }; return true }
     var isAllDay: Bool { if case .plan(let event) = source { return event.isAllDay }; return false }
+    var daySection: ScheduleDaySection { isDeadline ? .deadlines : (isAllDay ? .allDay : .timed) }
     var courseID: UUID? {
         switch source { case .course(let event): return event.meeting.courseID; case .plan(let event): return event.task.courseID }
     }

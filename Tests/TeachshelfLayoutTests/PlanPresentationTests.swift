@@ -51,6 +51,39 @@ import TeachshelfCore
         #expect(ScheduleData.planEvents(on: date(14), in: state, selection: selection).isEmpty)
     }
 
+    @Test func dayMarkersKeepMultiDayAllDayPlansAndTheirDeadlinesInSeparateGroups() {
+        let allDay = StudyTask(title: "全天活动", startsAt: date(14), deadline: date(15),
+                               endsAt: date(16), completionRequired: false)
+        let timed = StudyTask(title: "午休", startsAt: date(15, 12), isAllDay: false,
+                              endsAt: date(15, 13), completionRequired: false)
+        var state = LibraryState(); state.tasks = [allDay, timed]
+        let selection = ScheduleSelection(selectedDate: date(15))
+        let events = ScheduleData.planEvents(on: date(15), in: state, selection: selection)
+        #expect(events.filter { $0.daySection == .allDay }.map(\.title) == ["全天活动"])
+        #expect(events.filter { $0.daySection == .deadlines }.map(\.title) == ["全天活动"])
+        #expect(events.filter { $0.daySection == .timed }.map(\.title) == ["午休"])
+        selection.showsCourses = false
+        #expect(ScheduleData.planEvents(on: date(15), in: state, selection: selection).allSatisfy { $0.daySection != .deadlines })
+        #expect(ScheduleData.planEvents(on: date(16), in: state, selection: selection).isEmpty)
+    }
+
+    @Test func clickingDayMarkerKeepsFiltersAndNavigatesToItsSectionOnlyForThatDay() {
+        let state = LibraryState()
+        let selection = ScheduleSelection(selectedDate: date(14))
+        selection.planFilter = .pending
+        selection.showAgenda(on: date(15, 23), section: .deadlines, in: state)
+        #expect(selection.mode == .agenda)
+        #expect(selection.selectedDate == date(15))
+        #expect(selection.agendaFocus == .deadlines)
+        #expect(selection.planFilter == .pending)
+        selection.setDate(date(16))
+        #expect(selection.agendaFocus == nil)
+        selection.showAgenda(on: date(15), section: .allDay, in: state)
+        #expect(selection.agendaFocus == .allDay)
+        selection.setMode(.week, in: state)
+        #expect(selection.agendaFocus == nil)
+    }
+
     @Test func planUndoPreservesUnrelatedEditsAndRejectsAChangedTarget() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("plan-undo-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }

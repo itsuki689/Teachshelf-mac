@@ -18,7 +18,7 @@ struct ScheduleWeekFitTests {
                 rowHeight: metrics.rowHeight, sectionCount: 11, days: days)
 
             #expect(grid.width + 2 * metrics.horizontalInset <= viewport.width + 0.001)
-            #expect(grid.height + metrics.headerHeight + metrics.allDayHeight + 2 * metrics.verticalInset <= viewport.height + 0.001)
+            #expect(grid.height + metrics.headerHeight + 2 * metrics.verticalInset <= viewport.height + 0.001)
             #expect(metrics.rowHeight >= 42)
             #expect(metrics.timeColumnWidth >= 48)
             #expect(metrics.sectionColumnWidth >= 52)
@@ -40,7 +40,7 @@ struct ScheduleWeekFitTests {
         for sections in [1, 11, 16, 30] {
             let viewport = CGSize(width: 552, height: 570)
             let metrics = ScheduleWeekMetrics(viewport: viewport, sectionCount: sections)
-            #expect(metrics.rowHeight * CGFloat(sections) + metrics.headerHeight + metrics.allDayHeight
+            #expect(metrics.rowHeight * CGFloat(sections) + metrics.headerHeight
                     + 2 * metrics.verticalInset <= viewport.height + 0.001)
             #expect(metrics.rowHeight > 0)
         }
