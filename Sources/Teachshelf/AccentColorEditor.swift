@@ -102,10 +102,10 @@ struct AccentColorEditor: View {
             }
         }.padding(26).frame(width: 500)
             .appTheme()
+            .dismissColorPanelAutomatically()
             .onAppear { hexInput = selectedHex }
             .onChange(of: hexInput) { _, value in store.previewAccent(value, sessionID: sessionID) }
             .onDisappear {
-                NSColorPanel.shared.orderOut(nil)
                 store.cancelAccentPreview(sessionID: sessionID)
             }
     }

@@ -78,8 +78,10 @@ struct ScheduleMonthView: View {
             }
             .padding(8)
             .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
-            .background(isSelected ? theme.selection : Color(nsColor: .windowBackgroundColor))
-            .overlay { if isSelected { Rectangle().strokeBorder(theme.selectionBorder, lineWidth: 1.5) } }
+            .background {
+                Color(nsColor: .windowBackgroundColor)
+                    .overlay { if isSelected { Color.gray.opacity(theme.isDark ? 0.28 : 0.20) } }
+            }
             .opacity(sameMonth ? 1 : 0.55)
             .contentShape(Rectangle())
         }

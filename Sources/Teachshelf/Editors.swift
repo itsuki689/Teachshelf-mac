@@ -38,6 +38,7 @@ struct CourseEditor: View {
                 Button("保存", action: save).appPrimaryButton().keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }.padding(20)
         }.frame(width: 460, height: 380)
+            .dismissColorPanelAutomatically()
     }
     private func save() {
         var value = course ?? Course(name: name)

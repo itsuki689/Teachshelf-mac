@@ -118,16 +118,7 @@ struct ScheduleWeekView: View {
                 .frame(width: metrics.columnWidth, height: metrics.headerHeight)
                 .foregroundStyle(isToday ? Color.white : Color.primary)
                 .contentShape(Rectangle())
-                .background(isToday ? theme.controlAccent : (selected ? theme.controlAccent.opacity(0.20) : .clear))
-                .overlay {
-                    if selected {
-                        Rectangle().strokeBorder(isToday ? Color.white.opacity(0.95) : theme.controlAccent, lineWidth: 2)
-                            .padding(isToday ? 2 : 0).allowsHitTesting(false)
-                    }
-                }
-                .overlay(alignment: .bottom) {
-                    if selected { Rectangle().fill(isToday ? Color.white : theme.ink).frame(height: 3) }
-                }
+                .background(isToday ? theme.controlAccent : (selected ? Color.gray.opacity(theme.isDark ? 0.28 : 0.20) : .clear))
             }
         }
     }
@@ -190,8 +181,7 @@ struct ScheduleWeekView: View {
             }
             ForEach(0..<7, id: \.self) { index in
                 if let date = dayDate(index), calendar.isDate(date, inSameDayAs: selection.selectedDate) {
-                    Rectangle().fill(theme.ink.opacity(theme.isDark ? 0.12 : 0.075))
-                        .overlay { Rectangle().strokeBorder(theme.controlAccent.opacity(0.5), lineWidth: 1.5) }
+                    Rectangle().fill(Color.gray.opacity(theme.isDark ? 0.22 : 0.12))
                         .frame(width: metrics.columnWidth, height: timeline.height)
                         .offset(x: metrics.labelWidth + CGFloat(index) * metrics.columnWidth)
                 }

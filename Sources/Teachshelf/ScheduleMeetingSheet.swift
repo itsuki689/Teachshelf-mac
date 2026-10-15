@@ -145,6 +145,7 @@ private struct MeetingPlanColorEditor: View {
                 }.appPrimaryButton().disabled(colorHex.map { RGBColor(hex: $0) == nil } ?? false)
             }
         }.padding(24).frame(width: 450)
+            .dismissColorPanelAutomatically()
             .onAppear {
                 let term = store.state.timetableTerms.first { $0.id == context.term.id }
                 if let master = term?.meetings.first(where: { $0.id == context.meeting.id }) { colorHex = master.colorHex }

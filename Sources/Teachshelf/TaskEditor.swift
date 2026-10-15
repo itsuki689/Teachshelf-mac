@@ -118,6 +118,7 @@ struct TaskEditor: View {
         .frame(width: 650, height: compact ? 620 : 760)
         .environment(\.calendar, calendar)
         .environment(\.timeZone, calendar.timeZone)
+        .dismissColorPanelAutomatically()
         .onChange(of: editScope) { _, scope in
             draft = scope == .all ? currentParent : occurrence.map { PlanCalendar.snapshot(of: currentParent, originalDate: $0.originalDate) } ?? currentParent
             hasDeadline = draft.deadline != nil

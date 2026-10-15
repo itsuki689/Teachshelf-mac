@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import TeachshelfCore
 
@@ -27,6 +28,9 @@ struct PlanColorControl: View {
                 Text("跟随关联课程颜色；未关联课程时使用强调色。")
                     .font(.caption).foregroundStyle(.secondary)
             }
+        }
+        .onChange(of: colorHex == nil) { _, isInherited in
+            if isInherited { NSColorPanel.shared.orderOut(nil) }
         }
     }
 }
