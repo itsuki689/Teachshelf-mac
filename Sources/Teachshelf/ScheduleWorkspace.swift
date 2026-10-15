@@ -111,7 +111,6 @@ private struct ScheduleContent: View {
                             .buttonStyle(.borderless).help(store.planUndoLabel ?? "撤销计划修改")
                     }
                     dateNotice
-                    cancellationNotice
                     Divider()
                     ScheduleSideAgenda(selection: selection, onMeeting: showMeeting, onPlan: editOccurrence, onTask: editTask)
                 }.padding(16)
@@ -204,13 +203,9 @@ private struct ScheduleContent: View {
     }
 
     private var adjustmentControls: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Toggle("编辑固定计划", isOn: $adjusting).toggleStyle(.switch).controlSize(.small)
-                .disabled(!selection.showsCourses)
-                .help("开启后可选中和调整固定计划；活动计划可直接选择和调整")
-            Text("活动单击选中、双击编辑；固定需开启编辑才可选中，双击查看详情。边缘调时，方向键移动。青点全天，红点 DDL。")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
+        Toggle("编辑固定计划", isOn: $adjusting).toggleStyle(.switch).controlSize(.small)
+            .disabled(!selection.showsCourses)
+            .help("开启后可选中和调整固定计划；活动计划可直接选择和调整")
     }
 
     @ViewBuilder private var dateNotice: some View {
@@ -241,35 +236,6 @@ private struct ScheduleContent: View {
         panel = .meeting(context)
     }
 
-    private var cancellationGroups: [(term: TimetableTerm, count: Int)] {
-        guard selection.showsCourses else { return [] }
-        let calendar = TimetableTerm.academicCalendar
-        let days = selection.mode == .week ? ScheduleData.weekDays(in: store.state, selection: selection) : ScheduleData.agendaDays(selection: selection)
-        return terms.compactMap { term in
-            guard selection.termID == nil || selection.termID == term.id else { return nil }
-            let count = term.cancellations.filter { cancellation in
-                let matchesDate = selection.mode == .month
-                    ? calendar.isDate(cancellation.date, equalTo: selection.selectedDate, toGranularity: .month)
-                    : days.contains { calendar.isDate($0, inSameDayAs: cancellation.date) }
-                let matchesCourse = selection.courseID == nil || term.meetings.contains { $0.id == cancellation.meetingID && $0.courseID == selection.courseID }
-                return matchesDate && matchesCourse
-            }.count
-            return count > 0 ? (term, count) : nil
-        }
-    }
-
-    @ViewBuilder private var cancellationNotice: some View {
-        let groups = cancellationGroups
-        if !groups.isEmpty {
-            Menu {
-                ForEach(groups.map(\.term)) { term in Button(term.name) { panel = .settings(term) } }
-            } label: {
-                Label("\(groups.reduce(0) { $0 + $1.count }) 次停课 · 查看记录", systemImage: "pause.circle")
-                    .font(.caption).foregroundStyle(.secondary)
-            }.menuStyle(.borderlessButton).fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel("查看停课记录")
-        }
-    }
     private func editTask(_ task: StudyTask) { panel = .task(task, false, nil) }
     private func editOccurrence(_ occurrence: PlanOccurrence) {
         guard let source = store.state.tasks.first(where: { $0.id == occurrence.task.id }) else { return }
