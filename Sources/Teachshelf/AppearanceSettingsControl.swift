@@ -19,7 +19,7 @@ struct AppearanceSettingsControl: View {
     var body: some View {
         HStack(spacing: 24) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("显示模式")
+                Text("显示模式").font(.body.weight(.medium))
                 Toggle("跟随系统", isOn: Binding(
                     get: { store.state.appearance == "system" },
                     set: { save($0 ? "system" : effectiveDark ? "dark" : "light") }
