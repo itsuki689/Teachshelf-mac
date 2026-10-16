@@ -45,7 +45,9 @@ struct SidebarDestinationButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 9) {
-                Image(systemName: symbol).frame(width: 18)
+                Image(systemName: symbol)
+                    .font(.system(size: 17, weight: selected ? .semibold : .regular))
+                    .frame(width: 18)
                 Text(title).lineLimit(1)
                 Spacer(minLength: 4)
                 if let count, count > 0 { Text("\(count)").font(.caption).foregroundStyle(.secondary) }

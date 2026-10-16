@@ -83,9 +83,10 @@ struct ContentView: View {
             navRow("计划", "calendar", .schedule, compact: true).padding(.horizontal, 14)
             Divider().padding(.horizontal, 20).padding(.vertical, 12)
             HStack(spacing: 8) {
-                ChoiceMenu("课程状态", selection: $store.courseArchiveFilter, selectedTitle: store.courseArchiveFilter, compact: true) {
-                    ForEach(["当前课程", "已归档课程", "全部课程"], id: \.self) { Text($0).tag($0) }
-                }.frame(maxWidth: .infinity)
+                SolidChoiceMenu("课程状态", selection: $store.courseArchiveFilter,
+                                options: ["当前课程", "已归档课程", "全部课程"].map { ChoiceOption(value: $0, title: $0) },
+                                compact: true)
+                    .frame(maxWidth: .infinity)
                 Button { store.courseToEdit = nil; store.showingCourseEditor = true } label: {
                     Image(systemName: "plus").font(.system(size: 12, weight: .medium))
                         .frame(width: 28, height: 28).contentShape(Rectangle())
