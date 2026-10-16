@@ -7,8 +7,7 @@ import AppKit
 
     var body: some Scene {
         WindowGroup("Teachshelf") {
-            ContentView().appTheme().environmentObject(store)
-                .preferredColorScheme(store.state.appearance == "dark" ? .dark : store.state.appearance == "light" ? .light : nil)
+            ContentView().appTheme().appAppearance().environmentObject(store)
                 .onAppear { delegate.store = store; NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true) }
         }
         .defaultSize(width: 1260, height: 800)
@@ -36,8 +35,7 @@ import AppKit
             }
         }
         Settings {
-            SettingsWorkspace().appTheme().environmentObject(store)
-                .preferredColorScheme(store.state.appearance == "dark" ? .dark : store.state.appearance == "light" ? .light : nil)
+            SettingsWorkspace().appTheme().appAppearance().environmentObject(store)
                 .frame(width: 650, height: 600)
         }
     }

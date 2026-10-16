@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import TeachshelfCore
 
 struct AppTheme {
@@ -54,8 +55,27 @@ private struct AppPrimaryButtonModifier: ViewModifier {
     }
 }
 
+private struct AppAppearanceModifier: ViewModifier {
+    @EnvironmentObject private var store: AppStore
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { apply(store.state.appearance) }
+            .onChange(of: store.state.appearance) { _, mode in apply(mode) }
+    }
+
+    private func apply(_ mode: String) {
+        switch mode {
+        case "light": NSApp.appearance = NSAppearance(named: .aqua)
+        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+        default: NSApp.appearance = nil
+        }
+    }
+}
+
 extension View {
     func appTheme() -> some View { modifier(AppThemeModifier()) }
+    func appAppearance() -> some View { modifier(AppAppearanceModifier()) }
     func appPrimaryButton() -> some View { modifier(AppPrimaryButtonModifier()) }
 }
 

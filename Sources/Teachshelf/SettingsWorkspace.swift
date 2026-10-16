@@ -14,17 +14,11 @@ struct SettingsWorkspace: View {
                     Image(systemName: "books.vertical.fill").font(.system(size: 32)).foregroundStyle(theme.ink)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("你的学习空间").font(.system(size: 26, weight: .bold, design: .rounded))
-                        Text("Teachshelf for macOS · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.6.5")").font(.callout).foregroundStyle(.secondary)
+                        Text("Teachshelf for macOS · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.6.6")").font(.callout).foregroundStyle(.secondary)
                     }
                 }.padding(.bottom, 4)
                 settingsCard("外观", symbol: "paintpalette") {
-                    HStack {
-                        Text("显示模式")
-                        Spacer()
-                        Picker("显示模式", selection: Binding(get: { store.state.appearance }, set: { value in store.perform { try store.repository.saveAppearance(value) } })) {
-                            Text("跟随系统").tag("system"); Text("浅色").tag("light"); Text("深色").tag("dark")
-                        }.labelsHidden().pickerStyle(.segmented).tint(theme.controlAccent).frame(width: 260)
-                    }
+                    AppearanceSettingsControl()
                     Divider()
                     HStack(spacing: 12) {
                         RoundedRectangle(cornerRadius: 7).fill(Color(hex: store.effectiveAccentHex)).frame(width: 32, height: 32)
