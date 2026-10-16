@@ -26,17 +26,13 @@ struct AppearanceSettingsControl: View {
                 )).toggleStyle(.checkbox).font(.callout).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            VStack(spacing: 6) {
-                DayNightToggle(isDark: darkBinding)
-                    .contextMenu {
-                        appearanceChoice("跟随系统", value: "system")
-                        Divider()
-                        appearanceChoice("浅色", value: "light")
-                        appearanceChoice("深色", value: "dark")
-                    }
-                Text(effectiveDark ? "深色" : "浅色")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            DayNightToggle(isDark: darkBinding)
+                .contextMenu {
+                    appearanceChoice("跟随系统", value: "system")
+                    Divider()
+                    appearanceChoice("浅色", value: "light")
+                    appearanceChoice("深色", value: "dark")
+                }
         }
         .padding(.vertical, 4)
         .disabled(store.isBusy)

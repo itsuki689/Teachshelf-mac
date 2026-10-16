@@ -39,6 +39,7 @@ struct SidebarDestinationButton: View {
     let symbol: String
     let selected: Bool
     let count: Int?
+    var compact = false
     let action: () -> Void
 
     var body: some View {
@@ -48,8 +49,8 @@ struct SidebarDestinationButton: View {
                 Text(title).lineLimit(1)
                 Spacer(minLength: 4)
                 if let count, count > 0 { Text("\(count)").font(.caption).foregroundStyle(.secondary) }
-            }.font(.system(size: 13, weight: selected ? .semibold : .regular))
-                .padding(.horizontal, 10).frame(height: 36)
+            }.font(.system(size: compact ? 12 : 13, weight: selected ? .semibold : .regular))
+                .padding(.horizontal, 10).frame(height: compact ? 30 : 36)
                 .foregroundStyle(.primary)
                 .background(selected ? theme.selection : (hovered ? theme.ink.opacity(0.06) : .clear), in: RoundedRectangle(cornerRadius: 7))
                 .contentShape(RoundedRectangle(cornerRadius: 7))

@@ -77,21 +77,20 @@ struct ContentView: View {
                 libraryShortcut("未分类", "tray", .unassigned, hint: "未分类资料")
                 libraryShortcut("作业文件夹", "folder", .homework, hint: "作业文件夹")
                 libraryShortcut("待完成计划", "checklist", .tasks, hint: "待完成计划 · \(store.pendingTaskCount) 项")
-            }.padding(.horizontal, 14).padding(.bottom, 12)
+            }.padding(.horizontal, 14).padding(.bottom, 6)
                 .accessibilityElement(children: .contain).accessibilityLabel("快捷入口")
 
-            VStack(spacing: 3) {
-                navRow("计划", "calendar", .schedule)
-            }.padding(.horizontal, 14)
-            Divider().padding(.horizontal, 20).padding(.vertical, 15)
-            HStack {
-                Text("我的课程").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-                Spacer()
-                Button { store.courseToEdit = nil; store.showingCourseEditor = true } label: { Image(systemName: "plus") }
+            navRow("计划", "calendar", .schedule, compact: true).padding(.horizontal, 14)
+            Divider().padding(.horizontal, 20).padding(.vertical, 12)
+            HStack(spacing: 8) {
+                ChoiceMenu("课程状态", selection: $store.courseArchiveFilter, selectedTitle: store.courseArchiveFilter, compact: true) {
+                    ForEach(["当前课程", "已归档课程", "全部课程"], id: \.self) { Text($0).tag($0) }
+                }.frame(maxWidth: .infinity)
+                Button { store.courseToEdit = nil; store.showingCourseEditor = true } label: {
+                    Image(systemName: "plus").font(.system(size: 12, weight: .medium))
+                        .frame(width: 28, height: 28).contentShape(Rectangle())
+                }
                     .buttonStyle(.plain).help("新建课程 · ⌘N").accessibilityLabel("新建课程")
-            }.padding(.horizontal, 24).padding(.bottom, 10)
-            ChoiceMenu("课程状态", selection: $store.courseArchiveFilter, selectedTitle: store.courseArchiveFilter, compact: true) {
-                ForEach(["当前课程", "已归档课程", "全部课程"], id: \.self) { Text($0).tag($0) }
             }.padding(.horizontal, 14).padding(.bottom, 10)
             ScrollView {
                 LazyVStack(spacing: 6) {
@@ -123,8 +122,8 @@ struct ContentView: View {
         .onKeyPress(.downArrow) { moveSidebar(1); return .handled }
         .onKeyPress(.upArrow) { moveSidebar(-1); return .handled }
     }
-    private func navRow(_ title: String, _ symbol: String, _ selection: SidebarSelection, count: Int? = nil) -> some View {
-        SidebarDestinationButton(title: title, symbol: symbol, selected: store.navigation == selection, count: count) {
+    private func navRow(_ title: String, _ symbol: String, _ selection: SidebarSelection, count: Int? = nil, compact: Bool = false) -> some View {
+        SidebarDestinationButton(title: title, symbol: symbol, selected: store.navigation == selection, count: count, compact: compact) {
             if selection == .schedule { store.scheduleSelection.planFilter = .all }
             store.navigate(to: selection)
         }
