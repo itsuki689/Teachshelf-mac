@@ -26,8 +26,8 @@ struct AppearanceSettingsControl: View {
                 )).toggleStyle(.checkbox).font(.callout).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            VStack(spacing: 8) {
-                DayNightToggle(isDark: darkBinding, width: 160)
+            VStack(spacing: 6) {
+                DayNightToggle(isDark: darkBinding)
                     .contextMenu {
                         appearanceChoice("跟随系统", value: "system")
                         Divider()

@@ -13,7 +13,7 @@ struct DayNightToggle: View {
     @ViewState private var isVisible = false
     @ViewState private var startedAt = Date()
 
-    init(isDark: Binding<Bool>, width: CGFloat = 160) {
+    init(isDark: Binding<Bool>, width: CGFloat = 100) {
         self._isDark = isDark
         self.width = width
     }
