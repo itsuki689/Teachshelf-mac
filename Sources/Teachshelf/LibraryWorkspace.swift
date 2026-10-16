@@ -77,34 +77,28 @@ struct LibraryWorkspace: View {
         }
     }
 
+    private var subtitle: String {
+        if let id = store.currentCourseID, let course = store.state.courses.first(where: { $0.id == id }) {
+            return [course.semester, course.teacher, course.isArchived ? "已归档" : ""].filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+        return "课件、教材与灵感，井然有序。"
+    }
+
     private var commandBar: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 10) {
-                        Text(store.title).font(.system(size: 28, weight: .bold, design: .rounded))
-                        Text("\(items.count) 份").font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.horizontal, 9).padding(.vertical, 4).background(.quaternary, in: Capsule())
-                    }
-                    if let id = store.currentCourseID, let course = store.state.courses.first(where: { $0.id == id }) {
-                        Text([course.semester, course.teacher, course.isArchived ? "已归档" : ""].filter { !$0.isEmpty }.joined(separator: " · ")).font(.callout).foregroundStyle(.secondary)
-                    } else {
-                        Text("课件、教材与灵感，井然有序。").font(.callout).foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                if let id = store.currentCourseID, let course = store.state.courses.first(where: { $0.id == id }) {
-                    Button { store.courseToEdit = course; store.showingCourseEditor = true } label: { Image(systemName: "ellipsis.circle") }.buttonStyle(.borderless).help("编辑课程")
-                }
-                Picker("视图", selection: $presentation) {
-                    Image(systemName: "list.bullet").tag("list")
-                    Image(systemName: "square.grid.2x2").tag("covers")
-                }.labelsHidden().pickerStyle(.segmented).tint(theme.controlAccent).frame(width: 82).help("列表 / 封面")
-                Button {
-                    guard store.beforeLeavingMaterial?() != false else { return }
-                    showInspector.toggle()
-                } label: { Image(systemName: "sidebar.right") }.buttonStyle(.borderless).help("资料信息")
-                    .disabled(store.selectedMaterial == nil)
+        WorkspaceCommandBar(title: store.title, subtitle: subtitle, countLabel: "\(items.count) 份") {
+            if let id = store.currentCourseID, let course = store.state.courses.first(where: { $0.id == id }) {
+                Button { store.courseToEdit = course; store.showingCourseEditor = true } label: { Image(systemName: "ellipsis.circle") }.buttonStyle(.borderless).help("编辑课程")
             }
+            Picker("视图", selection: $presentation) {
+                Image(systemName: "list.bullet").tag("list")
+                Image(systemName: "square.grid.2x2").tag("covers")
+            }.labelsHidden().pickerStyle(.segmented).tint(theme.controlAccent).frame(width: 82).help("列表 / 封面")
+            Button {
+                guard store.beforeLeavingMaterial?() != false else { return }
+                showInspector.toggle()
+            } label: { Image(systemName: "sidebar.right") }.buttonStyle(.borderless).help("资料信息")
+                .disabled(store.selectedMaterial == nil)
+        } controls: {
             HStack(spacing: 10) {
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -121,7 +115,7 @@ struct LibraryWorkspace: View {
                     ForEach(["最近添加", "名称", "最近打开", "文件大小"], id: \.self) { Text($0).tag($0) }
                 }.frame(width: 110)
             }
-        }.padding(.horizontal, 24).padding(.vertical, 22)
+        }
     }
 
     private var materialTable: some View {

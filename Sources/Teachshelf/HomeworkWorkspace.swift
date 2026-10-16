@@ -30,36 +30,31 @@ struct HomeworkWorkspace: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("作业文件夹").font(.system(size: 28, weight: .bold, design: .rounded))
-                    Text("题目、草稿与成果，像 Finder 一样整理。").foregroundStyle(.secondary)
-                }
-                Spacer()
+            WorkspaceCommandBar(title: "作业文件夹", subtitle: "题目、草稿与成果，像 Finder 一样整理。") {
                 Button { chooseImport() } label: { Label("添加文件", systemImage: "plus") }
                     .appPrimaryButton().controlSize(.regular).disabled(store.isBusy)
-            }.padding(24)
-
-            HStack(spacing: 12) {
-                CourseMenu(selection: $courseID,
-                           courses: store.state.courses.filter { !$0.isArchived || $0.id == courseID },
-                           emptyTitle: "公共作业文件夹").frame(width: 230)
-                Spacer()
-                Button { reload() } label: { Image(systemName: "arrow.clockwise") }.help("刷新文件夹")
-                Button { if let folderURL { store.openURL(folderURL) } } label: { Label("在 Finder 中打开", systemImage: "folder") }
-                Menu {
-                    Button("新建文件夹…") { newFolderName = ""; showingNewFolder = true }
-                    Divider()
-                    Button("复制文件夹路径") { copyFolderPath() }
-                    if courseID != nil {
+            } controls: {
+                HStack(spacing: 12) {
+                    CourseMenu(selection: $courseID,
+                               courses: store.state.courses.filter { !$0.isArchived || $0.id == courseID },
+                               emptyTitle: "公共作业文件夹").frame(width: 230)
+                    Spacer()
+                    Button { reload() } label: { Image(systemName: "arrow.clockwise") }.help("刷新文件夹")
+                    Button { if let folderURL { store.openURL(folderURL) } } label: { Label("在 Finder 中打开", systemImage: "folder") }
+                    Menu {
+                        Button("新建文件夹…") { newFolderName = ""; showingNewFolder = true }
                         Divider()
-                        Button("使用已有文件夹…") { chooseMount() }
-                        if selectedCourse?.homeworkFolder != nil {
-                            Button("使用资料库内的作业文件夹") { unmount() }
+                        Button("复制文件夹路径") { copyFolderPath() }
+                        if courseID != nil {
+                            Divider()
+                            Button("使用已有文件夹…") { chooseMount() }
+                            if selectedCourse?.homeworkFolder != nil {
+                                Button("使用资料库内的作业文件夹") { unmount() }
+                            }
                         }
-                    }
-                } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).frame(width: 24)
-            }.padding(.horizontal, 24).padding(.bottom, 18)
+                    } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).frame(width: 24)
+                }
+            }
 
             Divider()
             HStack(spacing: 6) {

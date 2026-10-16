@@ -67,31 +67,28 @@ struct TaskWorkspace: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("计划列表").font(.system(size: 25, weight: .bold, design: .rounded))
-                    Text(pendingCount == 0 ? "查看安排、截止时间与尚未排期的事情。" : "\(pendingCount) 项需要完成，其余安排按各自时间进行。")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-                Spacer()
+            WorkspaceCommandBar(title: "计划列表", subtitle: pendingCount == 0
+                                ? "查看安排、截止时间与尚未排期的事情。"
+                                : "\(pendingCount) 项需要完成，其余安排按各自时间进行。") {
                 Button { creating = true } label: { Label("新建计划", systemImage: "plus") }
                     .appPrimaryButton().controlSize(.regular)
-            }.padding(20)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    statusPicker
-                    CourseMenu(selection: $courseID, courses: store.state.courses).frame(width: 145)
-                    Spacer(minLength: 0)
-                    searchField.frame(width: 200)
-                }
-                VStack(alignment: .leading, spacing: 10) {
-                    statusPicker
+            } controls: {
+                ViewThatFits(in: .horizontal) {
                     HStack(spacing: 12) {
+                        statusPicker
                         CourseMenu(selection: $courseID, courses: store.state.courses).frame(width: 145)
-                        searchField
+                        Spacer(minLength: 0)
+                        searchField.frame(width: 200)
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        statusPicker
+                        HStack(spacing: 12) {
+                            CourseMenu(selection: $courseID, courses: store.state.courses).frame(width: 145)
+                            searchField
+                        }
                     }
                 }
-            }.padding(.horizontal, 20).padding(.bottom, 15)
+            }
             Divider()
             WorkspaceSplitView {
                 list
