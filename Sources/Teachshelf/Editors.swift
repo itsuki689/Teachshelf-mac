@@ -85,7 +85,15 @@ struct ImportSheet: View {
             HStack {
                 Text("类别").frame(width: 57, alignment: .trailing)
                 TextField("可输入自定义类别", text: $category)
-                Menu { ForEach(store.categories, id: \.self) { value in Button(value) { category = value } } } label: { Image(systemName: "chevron.down") }.menuStyle(.borderlessButton).frame(width: 20)
+                Menu {
+                    ForEach(store.categories, id: \.self) { value in Button(value) { category = value } }
+                } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(width: 20)
+                .accessibilityLabel("选择已有类别")
             }
             Picker("存储方式", selection: $copy) {
                 Text("复制到资料库").tag(true)
