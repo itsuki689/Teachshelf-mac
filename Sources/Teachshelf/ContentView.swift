@@ -15,7 +15,7 @@ struct ContentView: View {
                     VStack(spacing: 0) {
                         Group {
                             switch store.navigation {
-                            case .tasks: TaskWorkspace()
+                            case .tasks: TaskWorkspace(pendingOnly: true)
                             case .schedule: ScheduleWorkspace()
                             case .homework: HomeworkWorkspace()
                             case .settings: SettingsWorkspace()
@@ -131,8 +131,7 @@ struct ContentView: View {
     }
 
     private func libraryShortcut(_ title: String, _ symbol: String, _ selection: SidebarSelection, hint: String) -> some View {
-        LibraryShortcut(title: title, symbol: symbol, selected: store.navigation == selection ||
-                        (selection == .tasks && store.navigation == .schedule && store.scheduleSelection.planFilter == .pending), hint: hint) {
+        LibraryShortcut(title: title, symbol: symbol, selected: store.navigation == selection, hint: hint) {
             store.navigate(to: selection)
         }
     }

@@ -110,7 +110,7 @@ struct TaskWorkspace: View {
         .sheet(item: $editingTask) { TaskEditor(task: $0, compact: true, calendar: PlanCalendar.calendar) }
         .sheet(isPresented: $creating) {
             TaskEditor(task: StudyTask(title: "", kind: "自主规划", courseID: courseID,
-                                      hasExecutionTime: false, completionRequired: false),
+                                      hasExecutionTime: false, completionRequired: filter == .pending),
                        isNew: true, compact: true, calendar: PlanCalendar.calendar)
         }
         .confirmationDialog("删除所选 \(selection.count) 项计划？", isPresented: $confirmingDeletion) {

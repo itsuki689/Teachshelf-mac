@@ -36,6 +36,7 @@ private struct PlanUndo {
     @Published var semester = "全部学期"
     @Published var courseArchiveFilter = "当前课程"
     @Published var workspaceCourseID: UUID?
+    private var workspaceCourseInitialized = false
     @Published var isBusy = false
     @Published var canUndoTaskDeletion = false
     @Published var status = "就绪"
@@ -144,11 +145,6 @@ private struct PlanUndo {
     }
 
     func navigate(to destination: SidebarSelection?) {
-        if destination == .tasks {
-            scheduleSelection.planFilter = .pending
-            navigate(to: .schedule)
-            return
-        }
         guard destination != navigation else { return }
         guard beforeLeavingMaterial?() != false else { return }
         if case .course(let id) = destination {
@@ -158,6 +154,19 @@ private struct PlanUndo {
             }
         }
         navigation = destination; selectedMaterialIDs = []
+    }
+
+    func prepareWorkspaceCourse() -> UUID? {
+        if !workspaceCourseInitialized {
+            workspaceCourseInitialized = true
+            workspaceCourseID = workspaceCourseID ?? state.courses.first(where: { !$0.isArchived })?.id
+        }
+        return workspaceCourseID
+    }
+
+    func selectWorkspaceCourse(_ id: UUID?) {
+        workspaceCourseInitialized = true
+        workspaceCourseID = id
     }
     func selectMaterials(_ ids: Set<UUID>) {
         if let current = selectedMaterial?.id, !ids.contains(current), beforeLeavingMaterial?() == false { return }
@@ -340,7 +349,7 @@ private struct PlanUndo {
             }.value
             if remembersLocation { UserDefaults.standard.set(target.path, forKey: "libraryPath") }
             if let id = accentPreviewID { cancelAccentPreview(sessionID: id) }
-            repository = next; selectedMaterialIDs = []; workspaceCourseID = nil; search = ""; semester = "全部学期"; categoryFilter = "全部类别"; formatFilter = "全部格式"; navigation = .all
+            repository = next; selectedMaterialIDs = []; workspaceCourseID = nil; workspaceCourseInitialized = false; search = ""; semester = "全部学期"; categoryFilter = "全部类别"; formatFilter = "全部格式"; navigation = .all
             reload(); status = "已切换资料库，原目录保留"
         } catch { report(error) }
     }

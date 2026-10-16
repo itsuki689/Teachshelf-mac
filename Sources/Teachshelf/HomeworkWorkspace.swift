@@ -146,8 +146,8 @@ struct HomeworkWorkspace: View {
                 }
             }.padding(12)
         }
-        .onAppear { courseID = store.workspaceCourseID ?? store.state.courses.first(where: { !$0.isArchived })?.id; reload() }
-        .onChange(of: courseID) { _, _ in relativePath = ""; search = ""; reload() }
+        .onAppear { courseID = store.prepareWorkspaceCourse(); reload() }
+        .onChange(of: courseID) { _, id in store.selectWorkspaceCourse(id); relativePath = ""; search = ""; reload() }
         .onChange(of: store.repository.root) { _, _ in courseID = nil; relativePath = ""; reload() }
         .onChange(of: store.state.courses) { _, courses in
             if let courseID, !courses.contains(where: { $0.id == courseID }) { self.courseID = nil; relativePath = "" }
