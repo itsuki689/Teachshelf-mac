@@ -99,7 +99,7 @@ struct ImportSheet: View {
                 Text("复制到资料库").tag(true)
                 Text("引用原文件").tag(false)
             }.pickerStyle(.radioGroup)
-            Text(copy ? "原文件保留。库内副本随资料库备份与迁移。" : "文件保持原位置。移动原文件后需要重新定位，外部文件需另行备份。")
+            Text(copy ? "原文件保留。副本按课程分文件夹保存，随资料库备份与迁移。" : "文件保持原位置。移动原文件后需要重新定位，外部文件需另行备份。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
             HStack {

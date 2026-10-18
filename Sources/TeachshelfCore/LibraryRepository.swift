@@ -12,6 +12,15 @@ public final class LibraryRepository: @unchecked Sendable {
     private var deletedTaskBatches: [[StudyTask]] = []
     private var indexURL: URL { root.appendingPathComponent("library.json") }
     private var filesURL: URL { root.appendingPathComponent("files", isDirectory: true) }
+    private var relocationURL: URL { root.appendingPathComponent(".material-relocation.json") }
+    private struct MaterialRelocation: Codable {
+        var source: String
+        var destination: String
+        var temporary: String?
+        var homework: Bool?
+        var directory: Bool?
+        var retainDestination: Bool?
+    }
     private static var encoder: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -70,6 +79,9 @@ public final class LibraryRepository: @unchecked Sendable {
             }
             try rejectSymbolicLink(filesURL)
             try fm.createDirectory(at: filesURL, withIntermediateDirectories: true)
+            try recoverMaterialRelocation()
+            // Keep schema-only upgrades lazy while organizing both materials and homework.
+            try saveSnapshot(snapshot, storageOnly: true)
         } catch {
             flock(lockDescriptor, LOCK_UN); Darwin.close(lockDescriptor); lockDescriptor = -1
             throw error
@@ -89,10 +101,214 @@ public final class LibraryRepository: @unchecked Sendable {
         try withLock {
             var next = snapshot
             try modify(&next)
-            try validate(next)
-            try persist(next)
-            snapshot = next
+            try saveSnapshot(next)
         }
+    }
+
+    private func organizedMaterials(_ state: LibraryState) throws -> LibraryState {
+        var next = state
+        for index in next.materials.indices where next.materials[index].isManaged {
+            let material = next.materials[index]
+            let destination = MaterialStorageLayout.relativePath(for: material, courses: next.courses)
+            guard material.storedPath != destination else { continue }
+            let source = try fileURL(for: material)
+            try ensureSafePath(source, beneath: filesURL)
+            // Missing files remain visible and can still be removed from the library.
+            guard fm.fileExists(atPath: source.path) else { continue }
+            guard try source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
+                throw LibraryError.unsafePath(source.path)
+            }
+            next.materials[index].storedPath = destination
+        }
+        return next
+    }
+
+    /// Keep both paths valid until the index commits. A small journal allows the
+    /// next launch to finish cleanup after termination on either side of the commit.
+    private func saveSnapshot(_ state: LibraryState, storageOnly: Bool = false) throws {
+        try recoverMaterialRelocation()
+        try validate(state)
+        let next = try organizedMaterials(state)
+        try validate(next)
+        var relocations = zip(state.materials, next.materials).compactMap { before, after -> MaterialRelocation? in
+            guard before.isManaged, before.storedPath != after.storedPath else { return nil }
+            return MaterialRelocation(source: before.storedPath, destination: after.storedPath,
+                                      temporary: "files/.material-copy-\(UUID().uuidString)")
+        }
+        relocations += try homeworkRelocations(in: next)
+        if relocations.isEmpty {
+            if !storageOnly { try persist(next) }
+            snapshot = next
+            return
+        }
+        try ensureSafePath(relocationURL, beneath: root)
+        try Self.encoder.encode(relocations).write(to: relocationURL, options: .atomic)
+        do {
+            for relocation in relocations {
+                let source = try relocationFile(relocation.source)
+                let destination = try relocationFile(relocation.destination)
+                if relocation.directory == true {
+                    try fm.createDirectory(at: destination, withIntermediateDirectories: true)
+                    continue
+                }
+                try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                if fm.fileExists(atPath: destination.path) {
+                    // A previous attempt may have stopped after preparing this path.
+                    guard sameMaterialContents(source, destination) else {
+                        throw LibraryError.invalidInput("课程资料目录中已有不同内容的同名文件：\(destination.lastPathComponent)")
+                    }
+                } else {
+                    // Links keep large course-file moves cheap on the same volume.
+                    // Volumes without hard-link support use a regular copy instead.
+                    do { try fm.linkItem(at: source, to: destination) }
+                    catch {
+                        let temporary = try relocationFile(relocation.temporary!)
+                        try fm.copyItem(at: source, to: temporary)
+                        let handle = try FileHandle(forWritingTo: temporary)
+                        try handle.synchronize(); try handle.close()
+                        guard Darwin.renamex_np(temporary.path, destination.path, UInt32(RENAME_EXCL)) == 0 else {
+                            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                        }
+                    }
+                }
+            }
+            if !storageOnly || next != snapshot { try persist(next) }
+            snapshot = next
+        } catch {
+            try? recoverMaterialRelocation(rollingBack: true)
+            throw error
+        }
+        // The committed index is authoritative even if cleanup must wait for reopening.
+        try? recoverMaterialRelocation()
+    }
+
+    private func relocationFile(_ path: String) throws -> URL {
+        guard !path.hasPrefix("/"), !path.contains("\0"), !path.split(separator: "/").contains(".."),
+              path.hasPrefix("files/") || path.hasPrefix("HomeworkFiles/") else { throw LibraryError.unsafePath(path) }
+        let url = root.appendingPathComponent(path).standardizedFileURL
+        try ensureSafePath(url, beneath: root)
+        return url
+    }
+
+    private func recoverMaterialRelocation(rollingBack: Bool = false) throws {
+        try ensureSafePath(relocationURL, beneath: root)
+        guard fm.fileExists(atPath: relocationURL.path) else { return }
+        let relocations = try JSONDecoder().decode([MaterialRelocation].self, from: Data(contentsOf: relocationURL))
+        let referenced = Set(snapshot.materials.filter(\.isManaged).map(\.storedPath))
+        let homeworkRoots = ([MaterialStorageLayout.homeworkPath(for: nil)] + snapshot.courses.map { MaterialStorageLayout.homeworkPath(for: $0) })
+        func isReferenced(_ path: String, homework: Bool) -> Bool {
+            homework ? homeworkRoots.contains { path == $0 || path.hasPrefix($0 + "/") } : referenced.contains(path)
+        }
+        // Children are cleaned before their parent directories.
+        for relocation in relocations.reversed() {
+            let source = try relocationFile(relocation.source), destination = try relocationFile(relocation.destination)
+            if let path = relocation.temporary {
+                let prefix = "files/.material-copy-"
+                guard path.hasPrefix(prefix), UUID(uuidString: String(path.dropFirst(prefix.count))) != nil else {
+                    throw LibraryError.invalidLibrary("资料整理日志包含无效的临时文件路径。")
+                }
+                let temporary = try relocationFile(path)
+                if !referenced.contains(path), fm.fileExists(atPath: temporary.path),
+                   try temporary.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true {
+                    try fm.removeItem(at: temporary)
+                }
+            }
+            let discard: URL, keep: URL
+            if rollingBack {
+                guard relocation.retainDestination != true,
+                      relocation.homework == true || !referenced.contains(relocation.destination) else { continue }
+                discard = destination; keep = source
+            } else if isReferenced(relocation.destination, homework: relocation.homework == true),
+                      !isReferenced(relocation.source, homework: relocation.homework == true) {
+                discard = source; keep = destination
+            } else if isReferenced(relocation.source, homework: relocation.homework == true),
+                      !isReferenced(relocation.destination, homework: relocation.homework == true) {
+                guard relocation.retainDestination != true else { continue }
+                discard = destination; keep = source
+            } else { continue }
+            if relocation.directory == true {
+                if fm.fileExists(atPath: keep.path) { _ = Darwin.rmdir(discard.path) }
+                removeEmptyMaterialDirectories(from: discard.deletingLastPathComponent())
+                continue
+            }
+            // Never remove the last surviving copy or overwrite an unrelated collision.
+            if fm.fileExists(atPath: discard.path), fm.fileExists(atPath: keep.path),
+               sameMaterialContents(discard, keep) {
+                try fm.removeItem(at: discard)
+            }
+            removeEmptyMaterialDirectories(from: discard.deletingLastPathComponent())
+        }
+        try fm.removeItem(at: relocationURL)
+        _ = Darwin.rmdir(root.appendingPathComponent("HomeworkFiles").path)
+    }
+
+    private func sameMaterialContents(_ first: URL, _ second: URL) -> Bool {
+        var a = stat(), b = stat()
+        guard lstat(first.path, &a) == 0, lstat(second.path, &b) == 0,
+              a.st_mode & S_IFMT == S_IFREG, b.st_mode & S_IFMT == S_IFREG else { return false }
+        return (a.st_dev == b.st_dev && a.st_ino == b.st_ino) || fm.contentsEqual(atPath: first.path, andPath: second.path)
+    }
+
+    private func removeEmptyMaterialDirectories(from directory: URL) {
+        var cursor = directory
+        let legacy = root.appendingPathComponent("HomeworkFiles")
+        let boundary = isBeneath(cursor, root: filesURL) ? filesURL : legacy
+        while cursor.path != boundary.path && isBeneath(cursor, root: boundary) {
+            // rmdir only removes an empty directory; retained records/files are untouched.
+            guard Darwin.rmdir(cursor.path) == 0 else { break }
+            cursor.deleteLastPathComponent()
+        }
+    }
+
+    private func homeworkRelocations(in state: LibraryState) throws -> [MaterialRelocation] {
+        var result: [MaterialRelocation] = []
+        var planned: [String: URL] = [:]
+        let courseFolders = try fm.contentsOfDirectory(at: filesURL, includingPropertiesForKeys: nil).map(\.standardizedFileURL)
+        func relative(_ url: URL) -> String { String(url.standardizedFileURL.path.dropFirst(root.path.count + 1)) }
+        func visit(_ source: URL, to proposed: URL) throws {
+            try ensureSafePath(source, beneath: root)
+            let values = try source.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+            let directory = values.isDirectory == true
+            guard directory || values.isRegularFile == true else { throw LibraryError.unsafePath(source.path) }
+            var target = proposed
+            let name = proposed.deletingPathExtension().lastPathComponent, suffix = proposed.pathExtension
+            var number = 2
+            while true {
+                try ensureSafePath(target, beneath: root)
+                let existing = planned[target.path] ?? (fm.fileExists(atPath: target.path) ? target : nil)
+                guard let existing else { break }
+                let isDirectory = try existing.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+                if (directory && isDirectory) || (!directory && !isDirectory && sameMaterialContents(source, existing)) { break }
+                target = proposed.deletingLastPathComponent().appendingPathComponent("\(name) \(number)" + (suffix.isEmpty ? "" : ".\(suffix)"))
+                number += 1
+            }
+            let retained = fm.fileExists(atPath: target.path) || planned[target.path] != nil
+            planned[target.path] = source
+            result.append(MaterialRelocation(source: relative(source), destination: relative(target),
+                                             temporary: directory ? nil : "files/.material-copy-\(UUID().uuidString)",
+                                             homework: true, directory: directory, retainDestination: retained))
+            if directory {
+                for child in try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil).sorted(by: { $0.path < $1.path }) {
+                    try visit(child.standardizedFileURL, to: target.appendingPathComponent(child.lastPathComponent))
+                }
+            }
+        }
+        for course in state.courses.map(Optional.some) + [nil] {
+            let target = root.appendingPathComponent(MaterialStorageLayout.homeworkPath(for: course))
+            var sources = [root.appendingPathComponent("HomeworkFiles/\(course?.id.uuidString ?? "Unassigned")")]
+            if let course {
+                sources += courseFolders.filter { $0.lastPathComponent.hasSuffix(" [\(course.id.uuidString)]") }.map { $0.appendingPathComponent("作业") }
+            }
+            for source in sources where source.path != target.path && fm.fileExists(atPath: source.path) {
+                try ensureSafePath(target, beneath: root)
+                if fm.fileExists(atPath: target.path),
+                   try target.resourceValues(forKeys: [.isDirectoryKey]).isDirectory != true {
+                    throw LibraryError.invalidInput("课程目录中的“作业”已被文件占用，请先移走该文件：\(target.path)")
+                }
+                try visit(source, to: target)
+            }
+        }
+        return result
     }
 
     public func saveCourse(_ course: Course) throws {
@@ -209,8 +425,10 @@ public final class LibraryRepository: @unchecked Sendable {
     }
     public func resolveURL(_ material: MaterialRecord) throws -> URL {
         try withLock {
-            let url = try fileURL(for: material)
-            try ensureSafePath(url, beneath: material.isManaged ? root : nil)
+            // Editors and drag providers may still hold the pre-move value snapshot.
+            let current = snapshot.materials.first(where: { $0.id == material.id }) ?? material
+            let url = try fileURL(for: current)
+            try ensureSafePath(url, beneath: current.isManaged ? root : nil)
             guard fm.fileExists(atPath: url.path) else { throw LibraryError.missingFile(url.path) }
             return url
         }
@@ -231,24 +449,30 @@ public final class LibraryRepository: @unchecked Sendable {
                     do {
                         let id = UUID()
                         let name = source.lastPathComponent
-                        let stored = copy ? "files/\(id.uuidString)-\(name)" : source.path
+                        var material = MaterialRecord(id: id, courseID: courseID, title: source.deletingPathExtension().lastPathComponent, originalName: name, sourcePath: source.path, storedPath: source.path, isManaged: copy, category: normalizedCategory)
+                        if copy { material.storedPath = MaterialStorageLayout.relativePath(for: material, courses: next.courses) }
                         let values = try source.resourceValues(forKeys: [.fileSizeKey])
+                        material.size = Int64(values.fileSize ?? 0)
                         if copy {
-                            let target = root.appendingPathComponent(stored)
+                            let target = root.appendingPathComponent(material.storedPath)
                             try ensureSafePath(target, beneath: root)
+                            try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                             try fm.copyItem(at: source, to: target)
                             created.append(target)
                         }
-                        next.materials.append(MaterialRecord(id: id, courseID: courseID, title: source.deletingPathExtension().lastPathComponent, originalName: name, sourcePath: source.path, storedPath: stored, isManaged: copy, category: normalizedCategory, size: Int64(values.fileSize ?? 0)))
+                        next.materials.append(material)
                         seen.insert(source.path); summary.imported += 1
                     } catch { summary.errors.append("\(source.lastPathComponent)：\(error.localizedDescription)") }
                 }
                 if summary.imported > 0 {
-                    try validate(next); try persist(next); snapshot = next
+                    try saveSnapshot(next)
                 }
                 return summary
             } catch {
-                for url in created { try? fm.removeItem(at: url) }
+                for url in created {
+                    try? fm.removeItem(at: url)
+                    removeEmptyMaterialDirectories(from: url.deletingLastPathComponent())
+                }
                 throw error
             }
         }
@@ -880,7 +1104,8 @@ extension LibraryRepository {
                 try ensureDirectory(url)
                 return url
             }
-            let url = root.appendingPathComponent("HomeworkFiles", isDirectory: true).appendingPathComponent(courseID?.uuidString ?? "Unassigned", isDirectory: true)
+            let course = snapshot.courses.first { $0.id == courseID }
+            let url = root.appendingPathComponent(MaterialStorageLayout.homeworkPath(for: course), isDirectory: true)
             try ensureSafePath(url, beneath: root)
             try fm.createDirectory(at: url, withIntermediateDirectories: true)
             return url
@@ -1060,8 +1285,7 @@ extension LibraryRepository {
                 }
                 let backupHistory = staging.appendingPathComponent("BackupHistory")
                 if fm.fileExists(atPath: backupHistory.path) { try fm.moveItem(at: backupHistory, to: history.appendingPathComponent("BackupHistory")) }
-                try persist(restored)
-                snapshot = restored
+                try saveSnapshot(restored)
                 deletedTaskBatches.removeAll()
             } catch {
                 var rollbackFailed = false

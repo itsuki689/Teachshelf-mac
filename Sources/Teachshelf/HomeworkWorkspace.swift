@@ -49,7 +49,7 @@ struct HomeworkWorkspace: View {
                             Divider()
                             Button("使用已有文件夹…") { chooseMount() }
                             if selectedCourse?.homeworkFolder != nil {
-                                Button("使用资料库内的作业文件夹") { unmount() }
+                                Button("使用课程目录下的作业文件夹") { unmount() }
                             }
                         }
                     } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).frame(width: 24)

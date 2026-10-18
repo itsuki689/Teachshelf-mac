@@ -278,7 +278,7 @@ struct SettingsWorkspace: View {
                 panelDivider
                 SettingsInformationRow(symbol: "doc.badge.clock", title: "保留原文件", detail: "移除资料记录或删除课程时，实际文件仍会保留。")
                 panelDivider
-                SettingsInformationRow(symbol: "folder", title: "普通作业目录", detail: "可在 Finder、编辑器和其他工具中继续管理文件。")
+                SettingsInformationRow(symbol: "folder", title: "课程内的作业目录", detail: "作业默认保存在课程文件夹下，可在 Finder、编辑器和其他工具中继续管理。")
             }
             SettingsPanel {
                 SettingsDisclosure("资料的导入与浏览") {
