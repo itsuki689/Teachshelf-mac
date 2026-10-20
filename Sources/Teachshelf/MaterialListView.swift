@@ -155,12 +155,15 @@ struct MaterialListView: NSViewRepresentable {
         coordinator.synchronizeSelection()
         coordinator.refreshVisibleRows()
         coordinator.synchronizing = false
+        table.synchronizePointerHover()
+        DispatchQueue.main.async { [weak table] in table?.synchronizePointerHover() }
     }
 
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
         coordinator.table?.enumerateAvailableRowViews { row, _ in
             (row as? MaterialAnimatedRow)?.stopAnimations()
         }
+        coordinator.table?.stopHoverTracking()
         coordinator.table?.delegate = nil
         coordinator.table?.dataSource = nil
         coordinator.table?.keyboardAction = nil
@@ -189,8 +192,13 @@ struct MaterialListView: NSViewRepresentable {
             let view = tableView.makeView(withIdentifier: identifier, owner: self) as? MaterialAnimatedRow
                 ?? MaterialAnimatedRow(frame: .zero)
             view.identifier = identifier
-            view.configure(theme: parent.theme, reduceMotion: parent.reduceMotion)
+            guard parent.rows.indices.contains(row) else { return nil }
+            view.configure(id: parent.rows[row].id, depth: parent.rows[row].depth, theme: parent.theme, reduceMotion: parent.reduceMotion)
             return view
+        }
+
+        func tableView(_ tableView: NSTableView, didRemove rowView: NSTableRowView, forRow row: Int) {
+            (rowView as? MaterialAnimatedRow)?.setHovered(false, animated: false)
         }
 
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -254,8 +262,8 @@ struct MaterialListView: NSViewRepresentable {
             guard let table else { return }
             table.enumerateAvailableRowViews { rowView, row in
                 guard self.parent.rows.indices.contains(row) else { return }
-                (rowView as? MaterialAnimatedRow)?.configure(theme: self.parent.theme,
-                                                            reduceMotion: self.parent.reduceMotion)
+                (rowView as? MaterialAnimatedRow)?.configure(id: self.parent.rows[row].id, depth: self.parent.rows[row].depth,
+                                                            theme: self.parent.theme, reduceMotion: self.parent.reduceMotion)
                 for column in table.tableColumns.indices {
                     if let view = table.view(atColumn: column, row: row, makeIfNecessary: false) {
                         self.configure(view, row: self.parent.rows[row],
@@ -442,12 +450,81 @@ private final class MaterialMenuCommand: NSObject {
     init(id: UUID, ids: Set<UUID>) { self.id = id; self.ids = ids }
 }
 
-private final class MaterialNativeTable: NSTableView {
+final class MaterialNativeTable: NSTableView {
     var folderClick: ((Int, Bool) -> Bool)?
     var editingSelection = false
     var dragStarted = false
     var keyboardAction: ((NSEvent) -> Bool)?
     var contextMenu: ((Int) -> NSMenu?)?
+
+    private var hoverTrackingArea: NSTrackingArea?
+    private var pointerMonitor: Any?
+    private var hoverObservers: [NSObjectProtocol] = []
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea { removeTrackingArea(hoverTrackingArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(area); hoverTrackingArea = area
+        synchronizePointerHover()
+    }
+    override func mouseEntered(with event: NSEvent) { synchronizePointerHover(at: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) { synchronizePointerHover(at: event.locationInWindow) }
+    override func mouseExited(with event: NSEvent) { updateHoveredRow(at: nil) }
+    override func layout() { super.layout(); synchronizePointerHover() }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        stopHoverTracking()
+        guard let window else { return }
+        window.acceptsMouseMovedEvents = true
+        pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]) { [weak self] event in
+            self?.synchronizePointerHover(at: event.window === self?.window ? event.locationInWindow : nil); return event
+        }
+        for name in [NSWindow.didResignKeyNotification, NSWindow.willMiniaturizeNotification, NSWindow.willCloseNotification] {
+            hoverObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in self?.updateHoveredRow(at: nil, animated: false) })
+        }
+        for (name, object) in [(NSWindow.didBecomeKeyNotification, window as AnyObject), (NSApplication.didBecomeActiveNotification, NSApp as AnyObject)] {
+            hoverObservers.append(NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in self?.synchronizePointerHover() })
+        }
+        hoverObservers.append(NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: NSApp, queue: .main) { [weak self] _ in self?.updateHoveredRow(at: nil, animated: false) })
+        if let clip = enclosingScrollView?.contentView {
+            clip.postsBoundsChangedNotifications = true
+            hoverObservers.append(NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak self] _ in self?.synchronizePointerHover() })
+        }
+        synchronizePointerHover()
+    }
+    func stopHoverTracking() {
+        if let pointerMonitor { NSEvent.removeMonitor(pointerMonitor) }
+        pointerMonitor = nil
+        hoverObservers.forEach(NotificationCenter.default.removeObserver); hoverObservers = []
+        updateHoveredRow(at: nil, animated: false)
+    }
+    func synchronizePointerHover(at windowPoint: NSPoint? = nil) {
+        guard let window, window.isKeyWindow, NSApp.isActive, !window.isMiniaturized else { updateHoveredRow(at: nil, animated: false); return }
+        updateHoverInWindow(at: windowPoint ?? window.convertPoint(fromScreen: NSEvent.mouseLocation))
+    }
+    func updateHoverInWindow(at windowPoint: NSPoint) {
+        guard let content = window?.contentView else { updateHoveredRow(at: nil, animated: false); return }
+        // NSView.hitTest receives a point in its superview's coordinates.
+        var hit = content.hitTest(content.superview?.convert(windowPoint, from: nil) ?? windowPoint)
+        while let view = hit, view !== self { hit = view.superview }
+        guard hit === self else { updateHoveredRow(at: nil); return }
+        updateHoveredRow(at: convert(windowPoint, from: nil))
+    }
+    /// A single owner clears every other available row, even when AppKit omits
+    /// mouseExited while rows move, are reused, or become covered by another view.
+    func updateHoveredRow(at point: NSPoint?, animated: Bool = true) {
+        let index = point.flatMap { visibleRect.contains($0) ? row(at: $0) : nil } ?? -1
+        enumerateAvailableRowViews { view, row in
+            guard let view = view as? MaterialAnimatedRow else { return }
+            let inside = point.map { row == index && view.highlightFrame.contains(view.convert($0, from: self)) } ?? false
+            view.setHovered(inside, animated: animated)
+        }
+    }
+    deinit {
+        if let pointerMonitor { NSEvent.removeMonitor(pointerMonitor) }
+        hoverObservers.forEach(NotificationCenter.default.removeObserver)
+    }
 
     override func keyDown(with event: NSEvent) {
         if keyboardAction?(event) != true { super.keyDown(with: event) }
@@ -482,13 +559,17 @@ private final class MaterialNativeTable: NSTableView {
     }
 }
 
-private final class MaterialAnimatedRow: NSTableRowView {
+final class MaterialAnimatedRow: NSTableRowView {
     private let surface = CALayer()
-    private var tracking: NSTrackingArea?
-    private var windowObservers: [NSObjectProtocol] = []
     private var theme = AppTheme(hex: ColorPalette.defaultAccent)
     private var reduceMotion = false
-    private var hovered = false
+    private(set) var isHovered = false
+    private var representedID: UUID?
+    private var depth = 0
+    var highlightFrame: NSRect {
+        let left = min(bounds.width, 6 + CGFloat(depth) * 22)
+        return NSRect(x: bounds.minX + left, y: bounds.minY + 4, width: max(0, bounds.width - left - 6), height: max(0, bounds.height - 8))
+    }
 
     override var isSelected: Bool {
         didSet { if oldValue != isSelected { updateSurface(animated: true) } }
@@ -509,7 +590,9 @@ private final class MaterialAnimatedRow: NSTableRowView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func configure(theme: AppTheme, reduceMotion: Bool) {
+    func configure(id: UUID, depth: Int, theme: AppTheme, reduceMotion: Bool) {
+        if representedID != id { setHovered(false, animated: false); representedID = id }
+        if self.depth != depth { self.depth = depth; needsLayout = true }
         let changed = self.theme.inkRGB != theme.inkRGB || self.theme.isDark != theme.isDark
             || self.reduceMotion != reduceMotion
         self.theme = theme; self.reduceMotion = reduceMotion
@@ -520,43 +603,22 @@ private final class MaterialAnimatedRow: NSTableRowView {
     override func layout() {
         super.layout()
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        surface.frame = bounds.insetBy(dx: 6, dy: 4)
+        surface.frame = highlightFrame
         CATransaction.commit()
-        // Expansion moves existing rows beneath the pointer without a mouse-exit
-        // event. Recalculate hover so reused rows do not retain stale highlights.
-        let inside = window.map { $0.isKeyWindow && visibleRect.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } ?? false
-        if hovered != inside { hovered = inside; updateSurface(animated: false) }
     }
 
     override func drawBackground(in dirtyRect: NSRect) {}
     override func drawSelection(in dirtyRect: NSRect) {}
     override func drawSeparator(in dirtyRect: NSRect) {}
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-                                  owner: self, userInfo: nil)
-        addTrackingArea(area); tracking = area
-    }
-
-    override func mouseEntered(with event: NSEvent) { hovered = true; updateSurface(animated: true) }
-    override func mouseExited(with event: NSEvent) { hovered = false; updateSurface(animated: true) }
-
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        windowObservers.forEach(NotificationCenter.default.removeObserver)
-        windowObservers = []
-        hovered = false
-        stopAnimations()
-        guard let window else { return }
-        for name in [NSWindow.didResignKeyNotification, NSWindow.didBecomeKeyNotification, NSWindow.didMiniaturizeNotification] {
-            windowObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
-                guard let self else { return }
-                self.hovered = false; self.stopAnimations(); self.updateSurface(animated: false)
-            })
-        }
+        setHovered(false, animated: false)
         updateSurface(animated: false)
+    }
+    func setHovered(_ hovered: Bool, animated: Bool) {
+        guard isHovered != hovered else { return }
+        isHovered = hovered; updateSurface(animated: animated)
     }
 
     func stopAnimations() { surface.removeAllAnimations() }
@@ -569,7 +631,7 @@ private final class MaterialAnimatedRow: NSTableRowView {
         if isSelected {
             fill = ink.withAlphaComponent(active ? (theme.isDark ? 0.22 : 0.12) : 0.08)
             border = ink.withAlphaComponent(active ? 0.55 : 0.25)
-        } else if hovered && active {
+        } else if isHovered && active {
             fill = ink.withAlphaComponent(theme.isDark ? 0.12 : 0.055)
             border = ink.withAlphaComponent(0.23)
         } else {
@@ -600,7 +662,6 @@ private final class MaterialAnimatedRow: NSTableRowView {
         surface.add(animation, forKey: key)
     }
 
-    deinit { windowObservers.forEach(NotificationCenter.default.removeObserver) }
 }
 
 private final class MaterialNameCell: NSTableCellView {

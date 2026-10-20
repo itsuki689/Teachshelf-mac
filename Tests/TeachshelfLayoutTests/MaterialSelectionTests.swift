@@ -128,6 +128,15 @@ import TeachshelfCore
             }
             #expect(try titleX(2) - titleX(5) == 44)
             #expect(try titleX(3) - titleX(5) == 22)
+            let rootRow = try #require(table.rowView(atRow: 5, makeIfNecessary: true) as? MaterialAnimatedRow)
+            let childRow = try #require(table.rowView(atRow: 3, makeIfNecessary: true) as? MaterialAnimatedRow)
+            let grandchildRow = try #require(table.rowView(atRow: 2, makeIfNecessary: true) as? MaterialAnimatedRow)
+            #expect(childRow.highlightFrame.minX - rootRow.highlightFrame.minX == 22)
+            #expect(grandchildRow.highlightFrame.minX - rootRow.highlightFrame.minX == 44)
+            #expect(childRow.highlightFrame.maxX == rootRow.highlightFrame.maxX)
+            #expect(grandchildRow.highlightFrame.maxX == rootRow.highlightFrame.maxX)
+            #expect(childRow.layer?.sublayers?.first?.frame == childRow.highlightFrame)
+            #expect(grandchildRow.layer?.sublayers?.first?.frame == grandchildRow.highlightFrame)
             let selectionColumn = table.column(withIdentifier: .init("selection"))
             let selectionCell = try #require(table.view(atColumn: selectionColumn, row: 0, makeIfNecessary: true))
             try #require(selectionCell.subviews.compactMap { $0 as? NSButton }.first).performClick(nil)
@@ -161,6 +170,60 @@ import TeachshelfCore
             store.navigate(to: .course(other.id))
             #expect(store.materialBrowserRows.count == 1)
             #expect(store.materialBrowserSelectableIDs.isEmpty)
+        }
+    }
+
+    @Test func hoverHasOnlyOneOwnerAndClearsWithoutMouseExitWhileSelectionSurvives() throws {
+        try withTable { store, host, window, rawTable, items in
+            let table = try #require(rawTable as? MaterialNativeTable)
+            func rows() throws -> [MaterialAnimatedRow] {
+                try (0..<3).map { try #require(table.rowView(atRow: $0, makeIfNecessary: true) as? MaterialAnimatedRow) }
+            }
+            func center(_ index: Int) -> NSPoint {
+                let rect = table.rect(ofRow: index)
+                return NSPoint(x: 200, y: rect.midY)
+            }
+            table.updateHoveredRow(at: center(0), animated: false)
+            #expect(try rows().map(\.isHovered) == [true, false, false])
+            // Jump to another row without delivering mouseExited to the old row.
+            table.updateHoveredRow(at: center(2), animated: false)
+            #expect(try rows().map(\.isHovered) == [false, false, true])
+            table.selectRowIndexes([0], byExtendingSelection: false)
+            table.updateHoveredRow(at: nil, animated: false)
+            #expect(try rows().allSatisfy { !$0.isHovered })
+            #expect(store.selectedMaterialIDs == [items[0].id])
+            #expect(try rows()[0].isSelected)
+            table.updateHoveredRow(at: center(1), animated: false)
+            NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+            #expect(try rows().allSatisfy { !$0.isHovered })
+            table.updateHoveredRow(at: center(2), animated: false)
+            host.rootView = list(items: Array(items.reversed()), store: store)
+            settle(host)
+            #expect(try rows().allSatisfy { !$0.isHovered })
+            #expect(store.selectedMaterialIDs == [items[0].id])
+            table.updateHoveredRow(at: center(0), animated: false)
+            window.contentView = NSView()
+            #expect(try rows().allSatisfy { !$0.isHovered })
+        }
+    }
+
+    @Test func inspectorOrOtherOverlayCannotLeaveTheCoveredRowHovered() throws {
+        try withTable { _, host, _, rawTable, _ in
+            let table = try #require(rawTable as? MaterialNativeTable)
+            let row = try #require(table.rowView(atRow: 0, makeIfNecessary: true) as? MaterialAnimatedRow)
+            let point = NSPoint(x: 220, y: table.rect(ofRow: 0).midY)
+            let windowPoint = table.convert(point, to: nil)
+            table.updateHoverInWindow(at: windowPoint)
+            #expect(row.isHovered)
+            let overlay = NSView(frame: table.convert(table.rect(ofRow: 0), to: host))
+            host.addSubview(overlay, positioned: .above, relativeTo: nil)
+            table.updateHoverInWindow(at: windowPoint)
+            #expect(!row.isHovered)
+            overlay.removeFromSuperview()
+            table.updateHoverInWindow(at: windowPoint)
+            #expect(row.isHovered)
+            table.updateHoverInWindow(at: NSPoint(x: -10, y: -10))
+            #expect(!row.isHovered)
         }
     }
 
