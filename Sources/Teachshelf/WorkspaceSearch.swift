@@ -97,7 +97,7 @@ extension AppStore {
             guard let plan = state.tasks.first(where: { $0.id == result.recordID }), beforeLeavingMaterial?() != false else { return false }
             toolbarPlanDraft = ToolbarPlanDraft(task: plan)
         }
-        showingWorkspaceSearch = false
+        showingWorkspaceSearch = false; workspaceSearchQuery = ""
         return true
     }
 

@@ -24,7 +24,10 @@ import AppKit
                     .disabled(store.selectedMaterial == nil)
             }
             CommandMenu("前往") {
-                Button("全局搜索…") { store.showingWorkspaceSearch = true }.keyboardShortcut("k")
+                Button("全局搜索…") {
+                    store.workspaceSearchQuery = ""
+                    store.showingWorkspaceSearch = true
+                }.keyboardShortcut("k")
                     .disabled(store.isBusy)
                 Divider()
                 Button("后退") { store.goBack() }.keyboardShortcut("[")
@@ -61,4 +64,6 @@ import AppKit
     }
 }
 
-extension Notification.Name { static let saveMaterial = Notification.Name("Teachshelf.saveMaterial") }
+extension Notification.Name {
+    static let saveMaterial = Notification.Name("Teachshelf.saveMaterial")
+}

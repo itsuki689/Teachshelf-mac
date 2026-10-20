@@ -50,6 +50,7 @@ private struct PlanUndo {
     @Published var courseToEdit: Course?
     @Published var showingCourseEditor = false
     @Published var showingWorkspaceSearch = false
+    @Published var workspaceSearchQuery = ""
     @Published var toolbarPlanDraft: ToolbarPlanDraft?
     @Published private(set) var previewAccentHex: String?
     @Published private(set) var accentPreviewID: UUID?
@@ -367,7 +368,7 @@ private struct PlanUndo {
             if let id = accentPreviewID { cancelAccentPreview(sessionID: id) }
             repository = next; selectedMaterialIDs = []; materialFolderID = nil; expandedMaterialFolderIDs = []; materialEditing = false; workspaceCourseID = nil; workspaceCourseInitialized = false; search = ""; semester = "全部学期"; categoryFilter = "全部类别"; formatFilter = "全部格式"; navigation = .all
             navigationHistory = WorkspaceNavigationHistory()
-            showingWorkspaceSearch = false; toolbarPlanDraft = nil
+            showingWorkspaceSearch = false; workspaceSearchQuery = ""; toolbarPlanDraft = nil
             reload(); status = "已切换资料库，原目录保留"
         } catch { report(error) }
     }

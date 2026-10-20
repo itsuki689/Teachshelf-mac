@@ -115,7 +115,7 @@ struct SettingsWorkspace: View {
     @ViewState private var accentSession: AccentEditingSession?
 
     private var section: SettingsSection { SettingsSection(rawValue: selectedSection) ?? .appearance }
-    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.7.5" }
+    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.7.6" }
 
     var body: some View {
         VStack(spacing: 0) {

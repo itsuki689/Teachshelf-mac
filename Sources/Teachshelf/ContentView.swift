@@ -35,6 +35,20 @@ struct ContentView: View {
                     .frame(width: detailGeometry.size.width, height: detailGeometry.size.height)
                 }
                 .workspaceWindowTitle(store.title)
+                .searchable(text: $store.workspaceSearchQuery, isPresented: $store.showingWorkspaceSearch,
+                            placement: .toolbarPrincipal, prompt: Text(""))
+                .searchSuggestions {
+                    ForEach(WorkspaceSearch.results(for: store.workspaceSearchQuery, in: store.state)) { result in
+                        Button("\(result.kind.rawValue) · \(result.title)", systemImage: result.kind.symbol) {
+                            store.activateSearchResult(result)
+                        }.searchCompletion(result.title).help(result.detail)
+                    }
+                }
+                .onSubmit(of: .search) {
+                    if let result = WorkspaceSearch.results(for: store.workspaceSearchQuery, in: store.state).first {
+                        store.activateSearchResult(result)
+                    }
+                }
                 .toolbar {
                     ToolbarItemGroup(placement: .navigation) {
                         Button { store.goBack() } label: { Label("后退", systemImage: "chevron.left") }
@@ -45,15 +59,9 @@ struct ContentView: View {
                             .accessibilityIdentifier("workspace.forward")
                     }
                     ToolbarItemGroup(placement: .primaryAction) {
-                        Button("搜索课程、资料和计划", systemImage: "magnifyingglass") { store.showingWorkspaceSearch = true }
-                            .labelStyle(.titleAndIcon).disabled(store.isBusy)
-                            .help("搜索当前资料库中的课程、资料与计划 · ⌘K")
-                            .accessibilityLabel("全局搜索").accessibilityIdentifier("workspace.search")
-                            .popover(isPresented: $store.showingWorkspaceSearch, arrowEdge: .bottom) {
-                                WorkspaceSearchPopover().environmentObject(store)
-                            }
                         Button { store.chooseImport() } label: { Label("导入资料", systemImage: "square.and.arrow.down") }
-                            .disabled(store.isBusy).help("导入文件或文件夹 · ⌘O")
+                            .labelStyle(.iconOnly).disabled(store.isBusy).help("导入文件或文件夹 · ⌘O")
+                            .accessibilityIdentifier("workspace.import")
                         Menu {
                             Button("新建课程…", systemImage: "books.vertical") {
                                 guard store.beforeLeavingMaterial?() != false else { return }
@@ -61,8 +69,10 @@ struct ContentView: View {
                             }
                             Button("新建计划…", systemImage: "calendar.badge.plus") { store.startToolbarPlan() }
                         } label: { Label("快捷新建", systemImage: "plus") }
-                            .menuIndicator(.hidden).disabled(store.isBusy).help("新建课程或计划")
+                            .labelStyle(.iconOnly).menuIndicator(.hidden).tint(Color.primary)
+                            .disabled(store.isBusy).help("新建课程或计划")
                             .accessibilityLabel("快捷新建")
+                            .accessibilityIdentifier("workspace.create")
                     }
                 }
             }

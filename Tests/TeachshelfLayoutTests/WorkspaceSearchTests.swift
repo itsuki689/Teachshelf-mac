@@ -57,11 +57,11 @@ import TeachshelfCore
         try repo.saveCourse(course)
         let store = AppStore(repository: repo, remembersLocation: false)
         let result = try #require(WorkspaceSearch.results(for: "算法", in: store.state).first)
-        store.search = "保留关键词"; store.showingWorkspaceSearch = true
+        store.search = "保留关键词"; store.workspaceSearchQuery = "保留搜索"
         store.beforeLeavingMaterial = { false }
         #expect(!store.activateSearchResult(result))
         #expect(store.navigation == .all && !store.canGoBack)
-        #expect(store.search == "保留关键词" && store.showingWorkspaceSearch)
+        #expect(store.search == "保留关键词" && store.workspaceSearchQuery == "保留搜索")
         store.startToolbarPlan()
         #expect(store.toolbarPlanDraft == nil)
         store.beforeLeavingMaterial = nil

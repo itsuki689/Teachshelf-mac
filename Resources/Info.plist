@@ -11,9 +11,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.teachshelf.mac</string>
     <key>CFBundleVersion</key>
-    <string>37</string>
+    <string>38</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.7.5</string>
+    <string>1.7.6</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleIconFile</key>
