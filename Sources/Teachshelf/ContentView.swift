@@ -34,12 +34,35 @@ struct ContentView: View {
                     }
                     .frame(width: detailGeometry.size.width, height: detailGeometry.size.height)
                 }
-                .navigationTitle(store.title)
+                .workspaceWindowTitle(store.title)
                 .toolbar {
-                    if store.navigation?.isLibrary == true {
-                        ToolbarItem(placement: .primaryAction) {
-                            Button { store.chooseImport() } label: { Label("导入资料", systemImage: "plus") }.disabled(store.isBusy).help("导入文件或文件夹 · ⌘O")
-                        }
+                    ToolbarItemGroup(placement: .navigation) {
+                        Button { store.goBack() } label: { Label("后退", systemImage: "chevron.left") }
+                            .disabled(!store.canGoBack || store.isBusy).help("后退 · ⌘[")
+                            .accessibilityIdentifier("workspace.back")
+                        Button { store.goForward() } label: { Label("前进", systemImage: "chevron.right") }
+                            .disabled(!store.canGoForward || store.isBusy).help("前进 · ⌘]")
+                            .accessibilityIdentifier("workspace.forward")
+                    }
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        Button("搜索课程、资料和计划", systemImage: "magnifyingglass") { store.showingWorkspaceSearch = true }
+                            .labelStyle(.titleAndIcon).disabled(store.isBusy)
+                            .help("搜索当前资料库中的课程、资料与计划 · ⌘K")
+                            .accessibilityLabel("全局搜索").accessibilityIdentifier("workspace.search")
+                            .popover(isPresented: $store.showingWorkspaceSearch, arrowEdge: .bottom) {
+                                WorkspaceSearchPopover().environmentObject(store)
+                            }
+                        Button { store.chooseImport() } label: { Label("导入资料", systemImage: "square.and.arrow.down") }
+                            .disabled(store.isBusy).help("导入文件或文件夹 · ⌘O")
+                        Menu {
+                            Button("新建课程…", systemImage: "books.vertical") {
+                                guard store.beforeLeavingMaterial?() != false else { return }
+                                store.courseToEdit = nil; store.showingCourseEditor = true
+                            }
+                            Button("新建计划…", systemImage: "calendar.badge.plus") { store.startToolbarPlan() }
+                        } label: { Label("快捷新建", systemImage: "plus") }
+                            .menuIndicator(.hidden).disabled(store.isBusy).help("新建课程或计划")
+                            .accessibilityLabel("快捷新建")
                     }
                 }
             }
@@ -51,10 +74,13 @@ struct ContentView: View {
         .disabled(store.isBusy)
         .sheet(isPresented: $store.showingCourseEditor) { CourseEditor(course: store.courseToEdit).environmentObject(store) }
         .sheet(isPresented: $store.showingImport) { ImportSheet(urls: store.importURLs).environmentObject(store) }
+        .sheet(item: $store.toolbarPlanDraft) { draft in
+            TaskEditor(task: draft.task, isNew: draft.isNew, compact: true, calendar: PlanCalendar.calendar)
+                .environmentObject(store)
+        }
         .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("好") { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
-        .onChange(of: store.navigation) { _, _ in store.selectedMaterialIDs = [] }
     }
 
     private var sidebar: some View {

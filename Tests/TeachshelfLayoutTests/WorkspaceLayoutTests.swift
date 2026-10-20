@@ -6,6 +6,33 @@ import TeachshelfCore
 
 @Suite(.serialized)
 @MainActor struct WorkspaceLayoutTests {
+    @Test func aGlobalSearchResultRemainsSelectedAfterTheDestinationViewHasAppeared() throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("toolbar-search-layout-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repo = try LibraryRepository(root: root)
+        let course = Course(name: "保留主体标题")
+        try repo.saveCourse(course)
+        let file = root.appendingPathComponent("搜索定位.txt")
+        try "搜索定位".write(to: file, atomically: true, encoding: .utf8)
+        _ = try repo.importFiles(urls: [file], courseID: course.id, category: "课件", copy: true)
+        let store = AppStore(repository: repo, remembersLocation: false)
+        store.navigate(to: .settings)
+        let host = NSHostingView(rootView: ContentView().appTheme().environmentObject(store))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1020, height: 680), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = host
+        defer { window.close() }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        let result = try #require(WorkspaceSearch.results(for: "搜索定位", in: store.state).first)
+        #expect(store.activateSearchResult(result))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        host.layoutSubtreeIfNeeded()
+        let material = try #require(repo.state.materials.first)
+        #expect(store.navigation == .course(course.id))
+        #expect(store.selectedMaterialIDs == [material.id])
+        #expect(findMaterialTable(in: host)?.selectedRowIndexes.count == 1)
+    }
+
     @Test func navigationKeepsTheSameMinimumSizeAtNarrowAndWideWidths() throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("Teachshelf-layout-\(UUID().uuidString)", isDirectory: true)

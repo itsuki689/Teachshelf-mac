@@ -23,7 +23,9 @@ extension AppStore {
     }
 
     func openMaterialFolder(_ id: UUID?) {
+        guard id != materialFolderID else { return }
         guard beforeLeavingMaterial?() != false else { return }
+        navigationHistory.record(workspaceLocation)
         materialFolderID = id; selectedMaterialIDs = []; expandedMaterialFolderIDs = []
     }
     func reorderMaterials(_ ids: Set<UUID>, before target: UUID?) {
