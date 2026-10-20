@@ -35,6 +35,7 @@ private struct PlanUndo {
     @Published var sort = "最近添加"
     @Published var materialEditing = false
     @Published var materialFolderID: UUID?
+    @Published var expandedMaterialFolderIDs: Set<UUID> = []
     @Published var semester = "全部学期"
     @Published var courseArchiveFilter = "当前课程"
     @Published var workspaceCourseID: UUID?
@@ -155,7 +156,7 @@ private struct PlanUndo {
                 semester = course.semester.isEmpty ? "全部学期" : course.semester
             }
         }
-        materialFolderID = nil; materialEditing = false
+        materialFolderID = nil; expandedMaterialFolderIDs = []; materialEditing = false
         navigation = destination; selectedMaterialIDs = []
     }
 
@@ -245,14 +246,14 @@ private struct PlanUndo {
         default: return "全部资料"
         }
     }
-    var visibleMaterials: [MaterialRecord] {
+    var filteredMaterials: [MaterialRecord] {
         let words = search.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         var items = state.materials.filter { material in
             switch navigation {
             case .favorites: if !material.isFavorite { return false }
             case .recent: if material.lastOpenedAt == nil { return false }
             case .unassigned: if material.courseID != nil { return false }
-            case .course(let id): if material.courseID != id || material.folderID != materialFolderID { return false }
+            case .course(let id): if material.courseID != id { return false }
             default: break
             }
             if semester != "全部学期" && !state.courses.contains(where: { $0.id == material.courseID && $0.semester == semester }) { return false }
@@ -274,6 +275,9 @@ private struct PlanUndo {
         }
         return items
     }
+    var visibleMaterials: [MaterialRecord] {
+        filteredMaterials.filter { currentCourseID == nil || $0.folderID == materialFolderID }
+    }
     func courseName(_ id: UUID?) -> String { state.courses.first { $0.id == id }?.name ?? "未分类" }
     func courseColor(_ id: UUID?) -> Color { Color(hex: state.courses.first { $0.id == id }?.colorHex ?? "#39786B") }
     func reload() {
@@ -285,6 +289,7 @@ private struct PlanUndo {
         if categoryFilter != "全部类别", !categories.contains(categoryFilter) { categoryFilter = "全部类别" }
         if let id = workspaceCourseID, !state.courses.contains(where: { $0.id == id }) { workspaceCourseID = nil }
         if let id = currentCourseID, !state.courses.contains(where: { $0.id == id }) { navigation = .unassigned }
+        expandedMaterialFolderIDs.formIntersection(Set(state.materialFolders.map(\.id)))
         if let id = materialFolderID, !state.materialFolders.contains(where: { $0.id == id && $0.courseID == currentCourseID }) { materialFolderID = nil }
     }
     func report(_ error: Error) {
@@ -362,7 +367,7 @@ private struct PlanUndo {
             }.value
             if remembersLocation { UserDefaults.standard.set(target.path, forKey: "libraryPath") }
             if let id = accentPreviewID { cancelAccentPreview(sessionID: id) }
-            repository = next; selectedMaterialIDs = []; materialFolderID = nil; materialEditing = false; workspaceCourseID = nil; workspaceCourseInitialized = false; search = ""; semester = "全部学期"; categoryFilter = "全部类别"; formatFilter = "全部格式"; navigation = .all
+            repository = next; selectedMaterialIDs = []; materialFolderID = nil; expandedMaterialFolderIDs = []; materialEditing = false; workspaceCourseID = nil; workspaceCourseInitialized = false; search = ""; semester = "全部学期"; categoryFilter = "全部类别"; formatFilter = "全部格式"; navigation = .all
             reload(); status = "已切换资料库，原目录保留"
         } catch { report(error) }
     }

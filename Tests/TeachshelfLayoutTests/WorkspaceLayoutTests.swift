@@ -94,6 +94,54 @@ import TeachshelfCore
         }
     }
 
+    @Test func materialEditingKeepsTheViewportColumnsAndScrollPositionAtBothWindowWidths() throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Teachshelf-edit-layout-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repo = try LibraryRepository(root: root)
+        let course = Course(name: "编辑过渡")
+        try repo.saveCourse(course)
+        let file = root.appendingPathComponent("资料.txt")
+        try "资料".write(to: file, atomically: true, encoding: .utf8)
+        _ = try repo.importFiles(urls: [file], courseID: course.id, category: "课件", copy: true)
+        for i in 0..<20 {
+            let next = root.appendingPathComponent("资料-\(i).txt")
+            try "资料".write(to: next, atomically: true, encoding: .utf8)
+            _ = try repo.importFiles(urls: [next], courseID: course.id, category: "课件", copy: false)
+        }
+        let store = AppStore(repository: repo, remembersLocation: false)
+        store.navigate(to: .course(course.id))
+        let prefs = try #require(UserDefaults(suiteName: "Teachshelf-edit-layout-\(UUID().uuidString)"))
+        prefs.set("list", forKey: "libraryPresentation")
+        let host = NSHostingView(rootView: LibraryWorkspace().appTheme().environmentObject(store).defaultAppStorage(prefs))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1017, height: 700), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = host
+        defer { window.close() }
+        func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.24)); host.layoutSubtreeIfNeeded() }
+        for size in [NSSize(width: 1017, height: 700), NSSize(width: 777, height: 580)] {
+            window.setContentSize(size); settle()
+            let table = try #require(findMaterialTable(in: host))
+            let scroll = try #require(table.enclosingScrollView)
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: 124)); scroll.reflectScrolledClipView(scroll.contentView)
+            let viewport = scroll.convert(scroll.bounds, to: host)
+            let columns = table.tableColumns.indices.map { table.rect(ofColumn: $0) }
+            let position = scroll.contentView.bounds.origin
+            for editing in [true, false, true, false] {
+                store.materialEditing = editing; settle()
+                #expect(try #require(findMaterialTable(in: host)) === table)
+                #expect(scroll.convert(scroll.bounds, to: host) == viewport)
+                #expect(table.tableColumns.indices.map { table.rect(ofColumn: $0) } == columns)
+                #expect(scroll.contentView.bounds.origin == position)
+                #expect(window.contentView?.bounds.size == size)
+            }
+        }
+    }
+
+    private func findMaterialTable(in view: NSView) -> NSTableView? {
+        if let table = view as? NSTableView { return table }
+        return view.subviews.lazy.compactMap { findMaterialTable(in: $0) }.first
+    }
+
     private func splitViews(in view: NSView) -> [NSSplitView] {
         ((view as? NSSplitView).map { [$0] } ?? []) + view.subviews.flatMap { splitViews(in: $0) }
     }

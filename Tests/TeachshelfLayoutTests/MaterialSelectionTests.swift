@@ -43,11 +43,17 @@ import TeachshelfCore
 
     @Test func editModeCheckboxesAccumulateSelectionAndFollowFileIdentityAfterSorting() throws {
         try withTable { store, host, _, _, items in
+            let original = try #require(findTable(in: host))
+            let nameColumn = original.column(withIdentifier: NSUserInterfaceItemIdentifier("name"))
+            let originalNameRect = original.rect(ofColumn: nameColumn)
+            let originalFrame = original.frame
             host.rootView = list(items: items, store: store, editing: true)
             settle(host)
             let table = try #require(findTable(in: host))
             let column = table.column(withIdentifier: NSUserInterfaceItemIdentifier("selection"))
             #expect(column >= 0 && !table.tableColumns[column].isHidden)
+            #expect(table.rect(ofColumn: nameColumn) == originalNameRect)
+            #expect(table.frame == originalFrame)
             func checkbox(_ row: Int) throws -> NSButton {
                 let cell = try #require(table.view(atColumn: column, row: row, makeIfNecessary: true))
                 return try #require(cell.subviews.compactMap { $0 as? NSButton }.first)
@@ -62,7 +68,10 @@ import TeachshelfCore
             #expect(try checkbox(1).state == .on)
             host.rootView = list(items: Array(items.reversed()), store: store)
             settle(host)
-            #expect(table.tableColumns[column].isHidden)
+            #expect(!table.tableColumns[column].isHidden)
+            #expect(try checkbox(0).isHidden)
+            #expect(table.rect(ofColumn: nameColumn) == originalNameRect)
+            #expect(table.frame == originalFrame)
         }
     }
 
@@ -83,6 +92,75 @@ import TeachshelfCore
             store.materialEditing = true
             store.navigate(to: .all)
             #expect(store.materialFolderID == nil && !store.materialEditing)
+        }
+    }
+
+    @Test func folderRowsExpandInPlaceWithNestedIndentationAndKeepEmptyFoldersVisible() throws {
+        try withTable { store, host, _, _, items in
+            let course = Course(name: "树形资料")
+            try store.repository.saveCourse(course)
+            for var record in items { record.courseID = course.id; try store.repository.updateMaterial(record) }
+            let outer = try store.repository.createMaterialFolder(name: "01 复习", courseID: course.id, materialIDs: [items[0].id])
+            let inner = try store.repository.createMaterialFolder(name: "练习", courseID: course.id, parentID: outer.id, materialIDs: [items[1].id])
+            let empty = try store.repository.createMaterialFolder(name: "02 空文件夹", courseID: course.id)
+            store.reload(); store.navigate(to: .course(course.id))
+            #expect(store.materialBrowserRows.map(\.id) == [outer.id, empty.id, items[2].id])
+            #expect(store.materialBrowserSelectableIDs == Set(items.map(\.id)))
+            host.rootView = list(items: store.materialBrowserRows.compactMap(\.material), store: store, editing: true)
+            settle(host)
+            let table = try #require(findTable(in: host))
+            let nameColumn = table.column(withIdentifier: .init("name"))
+            let folderCell = try #require(table.view(atColumn: nameColumn, row: 0, makeIfNecessary: true) as? NSTableCellView)
+            #expect(folderCell.textField?.stringValue == outer.name)
+            let disclosure = try #require(folderCell.subviews.compactMap { $0 as? NSButton }.first)
+            disclosure.performClick(nil)
+            #expect(store.expandedMaterialFolderIDs.contains(outer.id))
+            store.toggleMaterialFolder(inner.id)
+            let expanded = store.materialBrowserRows
+            #expect(expanded.map(\.id) == [outer.id, inner.id, items[1].id, items[0].id, empty.id, items[2].id])
+            #expect(expanded.map(\.depth) == [0, 1, 2, 1, 0, 0])
+            host.rootView = list(items: expanded.compactMap(\.material), store: store, editing: true)
+            settle(host)
+            #expect(table.numberOfRows == 6)
+            func titleX(_ row: Int) throws -> CGFloat {
+                let cell = try #require(table.view(atColumn: nameColumn, row: row, makeIfNecessary: true) as? NSTableCellView)
+                return try #require(cell.textField).frame.minX
+            }
+            #expect(try titleX(2) - titleX(5) == 44)
+            #expect(try titleX(3) - titleX(5) == 22)
+            let selectionColumn = table.column(withIdentifier: .init("selection"))
+            let selectionCell = try #require(table.view(atColumn: selectionColumn, row: 0, makeIfNecessary: true))
+            try #require(selectionCell.subviews.compactMap { $0 as? NSButton }.first).performClick(nil)
+            #expect(store.selectedMaterialIDs == Set(items.prefix(2).map(\.id)))
+            store.toggleMaterialFolder(outer.id)
+            host.rootView = list(items: store.materialBrowserRows.compactMap(\.material), store: store, editing: true)
+            settle(host)
+            #expect(table.numberOfRows == 3)
+            #expect(store.selectedVisibleMaterialIDs == Set(items.prefix(2).map(\.id)))
+            store.openMaterialFolder(outer.id)
+            #expect(store.expandedMaterialFolderIDs.isEmpty)
+            #expect(store.materialBrowserRows.map(\.id) == [inner.id, items[0].id])
+            #expect(store.materialBrowserRows.allSatisfy { $0.depth == 0 })
+        }
+    }
+
+    @Test func searchingIncludesNestedFilesWithoutMutatingSavedExpansionOrCrossingCourses() throws {
+        try withTable { store, _, _, _, items in
+            let course = Course(name: "当前"), other = Course(name: "其他")
+            try store.repository.saveCourse(course); try store.repository.saveCourse(other)
+            for var record in items { record.courseID = course.id; try store.repository.updateMaterial(record) }
+            let outer = try store.repository.createMaterialFolder(name: "复习", courseID: course.id)
+            let inner = try store.repository.createMaterialFolder(name: "练习", courseID: course.id, parentID: outer.id, materialIDs: [items[1].id])
+            _ = try store.repository.createMaterialFolder(name: "其他课程文件夹", courseID: other.id)
+            store.reload(); store.navigate(to: .course(course.id)); store.search = items[1].title
+            #expect(store.materialBrowserRows.map(\.id) == [outer.id, inner.id, items[1].id])
+            #expect(store.materialBrowserRows.map(\.depth) == [0, 1, 2])
+            #expect(store.expandedMaterialFolderIDs.isEmpty)
+            store.search = ""
+            #expect(store.materialBrowserRows.map(\.id) == [outer.id, items[2].id, items[0].id])
+            store.navigate(to: .course(other.id))
+            #expect(store.materialBrowserRows.count == 1)
+            #expect(store.materialBrowserSelectableIDs.isEmpty)
         }
     }
 
@@ -115,7 +193,9 @@ import TeachshelfCore
                          courseName: { store.courseName($0) }, courseColor: { store.courseColor($0) },
                          resolveURL: { try? store.repository.resolveURL($0) },
                          onOpen: { _ in }, onQuickLook: { _ in }, onReveal: { _ in },
-                         onFavorite: { _ in }, onRemove: { _ in }, editing: editing)
+                         onFavorite: { _ in }, onRemove: { _ in },
+                         browserRows: store.currentCourseID == nil ? nil : store.materialBrowserRows,
+                         onToggleFolder: { store.toggleMaterialFolder($0.id) }, onOpenFolder: { store.openMaterialFolder($0.id) }, editing: editing)
     }
 
     private func settle(_ host: NSView) {

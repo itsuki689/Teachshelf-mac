@@ -16,7 +16,7 @@ struct MaterialDragPayload: Codable {
 extension AppStore {
     var materialSortMode: MaterialSortMode { state.courses.first { $0.id == currentCourseID }?.materialSort ?? .time }
     var canReorderMaterials: Bool { currentCourseID != nil && materialSortMode == .custom }
-    var selectedVisibleMaterialIDs: Set<UUID> { selectedMaterialIDs.intersection(Set(visibleMaterials.map(\.id))) }
+    var selectedVisibleMaterialIDs: Set<UUID> { selectedMaterialIDs.intersection(materialBrowserSelectableIDs) }
     var currentMaterialFolders: [MaterialFolder] {
         state.materialFolders.filter { $0.courseID == currentCourseID && $0.parentID == materialFolderID }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -24,11 +24,13 @@ extension AppStore {
 
     func openMaterialFolder(_ id: UUID?) {
         guard beforeLeavingMaterial?() != false else { return }
-        materialFolderID = id; selectedMaterialIDs = []
+        materialFolderID = id; selectedMaterialIDs = []; expandedMaterialFolderIDs = []
     }
     func reorderMaterials(_ ids: Set<UUID>, before target: UUID?) {
         guard canReorderMaterials, let courseID = currentCourseID else { return }
-        perform { try repository.reorderMaterials(ids: ids, before: target, courseID: courseID, folderID: materialFolderID); status = "资料顺序已保存" }
+        let records = state.materials.filter { ids.contains($0.id) }
+        guard let first = records.first, records.allSatisfy({ $0.courseID == courseID && $0.folderID == first.folderID }) else { return }
+        perform { try repository.reorderMaterials(ids: ids, before: target, courseID: courseID, folderID: first.folderID); status = "资料顺序已保存" }
     }
     func materialDragData(_ ids: Set<UUID>) -> Data? {
         guard let courseID = currentCourseID else { return nil }
