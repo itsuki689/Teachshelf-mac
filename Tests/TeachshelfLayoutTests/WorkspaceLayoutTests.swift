@@ -113,7 +113,8 @@ import TeachshelfCore
         store.navigate(to: .course(course.id))
         let prefs = try #require(UserDefaults(suiteName: "Teachshelf-edit-layout-\(UUID().uuidString)"))
         prefs.set("list", forKey: "libraryPresentation")
-        let host = NSHostingView(rootView: LibraryWorkspace().appTheme().environmentObject(store).defaultAppStorage(prefs))
+        let host = NSHostingView(rootView: LibraryWorkspace().appTheme().environmentObject(store)
+            .environment(\.usesWindowToolbar, true).defaultAppStorage(prefs))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1017, height: 700), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = host
         defer { window.close() }

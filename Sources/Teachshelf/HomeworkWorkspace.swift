@@ -30,9 +30,10 @@ struct HomeworkWorkspace: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            WorkspaceCommandBar(title: "作业文件夹", subtitle: "题目、草稿与成果，像 Finder 一样整理。") {
+            WorkspaceCommandBar(title: "作业文件夹", subtitle: "题目、草稿与成果，像 Finder 一样整理。",
+                                toolbarSubtitle: "\(visibleEntries.count) 项 · \(selectedCourse?.name ?? "公共作业文件夹")") {
                 Button { chooseImport() } label: { Label("添加文件", systemImage: "plus") }
-                    .appPrimaryButton().controlSize(.regular).disabled(store.isBusy)
+                    .disabled(store.isBusy).help("添加文件到当前作业文件夹")
             } controls: {
                 HStack(spacing: 12) {
                     CourseMenu(selection: $courseID,

@@ -69,9 +69,10 @@ struct TaskWorkspace: View {
         VStack(spacing: 0) {
             WorkspaceCommandBar(title: "计划列表", subtitle: pendingCount == 0
                                 ? "查看安排、截止时间与尚未排期的事情。"
-                                : "\(pendingCount) 项需要完成，其余安排按各自时间进行。") {
+                                : "\(pendingCount) 项需要完成，其余安排按各自时间进行。",
+                                toolbarSubtitle: "\(tasks.count) 项计划 · \(pendingCount) 项待完成") {
                 Button { creating = true } label: { Label("新建计划", systemImage: "plus") }
-                    .appPrimaryButton().controlSize(.regular)
+                    .help("新建计划")
             } controls: {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 12) {
@@ -338,6 +339,7 @@ struct PlanListSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             TaskWorkspace(courseID: courseID, pendingOnly: pendingOnly)
+                .environment(\.usesWindowToolbar, false)
             Divider()
             HStack {
                 Spacer()

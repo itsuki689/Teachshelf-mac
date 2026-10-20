@@ -28,6 +28,7 @@ private struct PlanUndo {
     @Published var state: LibraryState
     @Published var repository: LibraryRepository
     @Published var navigation: SidebarSelection? = .all
+    @Published var navigationHistory = WorkspaceNavigationHistory()
     @Published var selectedMaterialIDs: Set<UUID> = []
     @Published var search = ""
     @Published var categoryFilter = "全部类别"
@@ -150,14 +151,8 @@ private struct PlanUndo {
     func navigate(to destination: SidebarSelection?) {
         guard destination != navigation else { return }
         guard beforeLeavingMaterial?() != false else { return }
-        if case .course(let id) = destination {
-            workspaceCourseID = id
-            if semester != "全部学期", let course = state.courses.first(where: { $0.id == id }), course.semester != semester {
-                semester = course.semester.isEmpty ? "全部学期" : course.semester
-            }
-        }
-        materialFolderID = nil; expandedMaterialFolderIDs = []; materialEditing = false
-        navigation = destination; selectedMaterialIDs = []
+        navigationHistory.record(workspaceLocation)
+        applyWorkspaceLocation(WorkspaceLocation(page: destination))
     }
 
     func prepareWorkspaceCourse() -> UUID? {
@@ -291,6 +286,7 @@ private struct PlanUndo {
         if let id = currentCourseID, !state.courses.contains(where: { $0.id == id }) { navigation = .unassigned }
         expandedMaterialFolderIDs.formIntersection(Set(state.materialFolders.map(\.id)))
         if let id = materialFolderID, !state.materialFolders.contains(where: { $0.id == id && $0.courseID == currentCourseID }) { materialFolderID = nil }
+        reconcileNavigationHistory()
     }
     func report(_ error: Error) {
         status = "操作未完成"
@@ -368,6 +364,7 @@ private struct PlanUndo {
             if remembersLocation { UserDefaults.standard.set(target.path, forKey: "libraryPath") }
             if let id = accentPreviewID { cancelAccentPreview(sessionID: id) }
             repository = next; selectedMaterialIDs = []; materialFolderID = nil; expandedMaterialFolderIDs = []; materialEditing = false; workspaceCourseID = nil; workspaceCourseInitialized = false; search = ""; semester = "全部学期"; categoryFilter = "全部类别"; formatFilter = "全部格式"; navigation = .all
+            navigationHistory = WorkspaceNavigationHistory()
             reload(); status = "已切换资料库，原目录保留"
         } catch { report(error) }
     }

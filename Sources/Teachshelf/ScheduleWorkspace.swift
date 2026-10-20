@@ -8,6 +8,7 @@ struct ScheduleWorkspace: View {
 
 private struct ScheduleContent: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.usesWindowToolbar) private var usesWindowToolbar
     @Environment(\.appTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var selection: ScheduleSelection
@@ -46,6 +47,19 @@ private struct ScheduleContent: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .navigationSubtitle(term?.name ?? "个人安排")
+        .toolbar {
+            if usesWindowToolbar {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    planActions
+                    Button { createUnplanned() } label: { Label("新建计划", systemImage: "plus") }
+                        .help("新建计划")
+                    Menu { newPlanOptions } label: { Image(systemName: "chevron.down") }
+                        .menuIndicator(.hidden).help("更多新建计划方式")
+                        .accessibilityLabel("更多新建计划方式")
+                }
+            }
+        }
         .onKeyPress(phases: [.down, .repeat]) { press in
             guard selection.mode == .week, panel == nil, !choosingDate else { return .ignored }
             return ScheduleEventEditing.handleKey(press, store: store, fixedEditing: adjusting)
@@ -71,18 +85,13 @@ private struct ScheduleContent: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    HStack(spacing: 12) {
-                        Text("计划").font(.system(size: 18, weight: .semibold))
-                        Spacer(minLength: 0)
-                        Button { panel = .list } label: { Image(systemName: "list.bullet") }
-                            .help("计划列表").accessibilityLabel("计划列表")
-                        Button { panel = .importCourses } label: { Image(systemName: "square.and.arrow.down") }
-                            .help("导入课表").accessibilityLabel("导入课表")
-                        if let term {
-                            Button { panel = .settings(term) } label: { Image(systemName: "slider.horizontal.3") }
-                                .help("学期与作息设置").accessibilityLabel("学期与作息设置")
-                        }
-                    }.buttonStyle(.borderless)
+                    if !usesWindowToolbar {
+                        HStack(spacing: 12) {
+                            Text("计划").font(.system(size: 18, weight: .semibold))
+                            Spacer(minLength: 0)
+                            planActions
+                        }.buttonStyle(.borderless)
+                    }
                     modePicker
                     filters
                     if selection.mode == .week { adjustmentControls }
@@ -115,23 +124,41 @@ private struct ScheduleContent: View {
                     ScheduleSideAgenda(selection: selection, onMeeting: showMeeting, onPlan: editOccurrence, onTask: editTask)
                 }.padding(16)
             }
-            Divider()
-            HStack(spacing: 8) {
-            Button { createUnplanned() } label: {
-                Label("新建计划", systemImage: "plus").frame(maxWidth: .infinity)
-            }.buttonStyle(.bordered).controlSize(.large)
-            Menu {
-                Button("新建“空”") {
-                    let calendar = TimetableTerm.academicCalendar
-                    let begin = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: selection.selectedDate) ?? selection.selectedDate
-                    createEmptyPlan(begin, begin.addingTimeInterval(3600))
-                }
-                Button("添加全天安排") { createTask(selection.selectedDate) }
-            } label: { Image(systemName: "chevron.down") }.menuStyle(.borderlessButton).fixedSize().accessibilityLabel("更多新建计划方式")
-            }.padding(14)
+            if !usesWindowToolbar {
+                Divider()
+                HStack(spacing: 8) {
+                    Button { createUnplanned() } label: {
+                        Label("新建计划", systemImage: "plus").frame(maxWidth: .infinity)
+                    }.buttonStyle(.bordered).controlSize(.large)
+                    Menu {
+                        newPlanOptions
+                    } label: { Image(systemName: "chevron.down") }
+                        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("更多新建计划方式")
+                }.padding(14)
+            }
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
         .accessibilityElement(children: .contain).accessibilityLabel("计划选项与当天安排")
+    }
+
+    @ViewBuilder private var planActions: some View {
+        Button { panel = .list } label: { Label("计划列表", systemImage: "list.bullet") }
+            .help("计划列表").accessibilityLabel("计划列表")
+        Button { panel = .importCourses } label: { Label("导入课表", systemImage: "square.and.arrow.down") }
+            .help("导入课表").accessibilityLabel("导入课表")
+        if let term {
+            Button { panel = .settings(term) } label: { Label("学期与作息设置", systemImage: "slider.horizontal.3") }
+                .help("学期与作息设置").accessibilityLabel("学期与作息设置")
+        }
+    }
+
+    @ViewBuilder private var newPlanOptions: some View {
+        Button("新建“空”") {
+            let calendar = TimetableTerm.academicCalendar
+            let begin = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: selection.selectedDate) ?? selection.selectedDate
+            createEmptyPlan(begin, begin.addingTimeInterval(3600))
+        }
+        Button("添加全天安排") { createTask(selection.selectedDate) }
     }
 
     private var modePicker: some View {

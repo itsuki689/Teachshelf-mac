@@ -111,30 +111,33 @@ private struct SettingsDisclosure<Content: View>: View {
 struct SettingsWorkspace: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.appTheme) private var theme
+    @Environment(\.usesWindowToolbar) private var usesWindowToolbar
     @SceneStorage("settings.section") private var selectedSection = SettingsSection.appearance.rawValue
     @ViewState private var accentSession: AccentEditingSession?
 
     private var section: SettingsSection { SettingsSection(rawValue: selectedSection) ?? .appearance }
-    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.7.3" }
+    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.7.4" }
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("设置").font(.system(size: 28, weight: .bold, design: .rounded))
-                        Text(section.subtitle).font(.callout).foregroundStyle(.secondary)
+            if !usesWindowToolbar {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("设置").font(.system(size: 28, weight: .bold, design: .rounded))
+                            Text(section.subtitle).font(.callout).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if store.isBusy { ProgressView().controlSize(.small).help(store.status) }
                     }
-                    Spacer()
-                    if store.isBusy { ProgressView().controlSize(.small).help(store.status) }
+                    Picker("设置分类", selection: $selectedSection) {
+                        ForEach(SettingsSection.allCases) { Text($0.title).tag($0.rawValue) }
+                    }.pickerStyle(.segmented).labelsHidden().controlSize(.large)
                 }
-                Picker("设置分类", selection: $selectedSection) {
-                    ForEach(SettingsSection.allCases) { Text($0.title).tag($0.rawValue) }
-                }.pickerStyle(.segmented).labelsHidden().controlSize(.large)
+                .padding(.horizontal, 28).padding(.vertical, 24)
+                .frame(maxWidth: 800).frame(maxWidth: .infinity)
+                Divider()
             }
-            .padding(.horizontal, 28).padding(.vertical, 24)
-            .frame(maxWidth: 800).frame(maxWidth: .infinity)
-            Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     switch section {
@@ -148,6 +151,16 @@ struct SettingsWorkspace: View {
             }.id(section)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .navigationSubtitle(usesWindowToolbar ? section.subtitle : "")
+        .toolbar {
+            if usesWindowToolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Picker("设置分类", selection: $selectedSection) {
+                        ForEach(SettingsSection.allCases) { Text($0.title).tag($0.rawValue) }
+                    }.pickerStyle(.segmented).labelsHidden().frame(width: 280)
+                }
+            }
+        }
         .sheet(item: $accentSession) { session in
             AccentColorEditor(sessionID: session.id).environmentObject(store)
         }

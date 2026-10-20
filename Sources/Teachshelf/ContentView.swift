@@ -22,6 +22,7 @@ struct ContentView: View {
                             default: LibraryWorkspace()
                             }
                         }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .environment(\.usesWindowToolbar, true)
                         Divider()
                         HStack(spacing: 8) {
                             if store.isBusy { ProgressView().controlSize(.small) }
@@ -36,10 +37,13 @@ struct ContentView: View {
                 }
                 .navigationTitle(store.title)
                 .toolbar {
-                    if store.navigation?.isLibrary == true {
-                        ToolbarItem(placement: .primaryAction) {
-                            Button { store.chooseImport() } label: { Label("导入资料", systemImage: "plus") }.disabled(store.isBusy).help("导入文件或文件夹 · ⌘O")
-                        }
+                    ToolbarItemGroup(placement: .navigation) {
+                        Button { store.goBack() } label: { Label("后退", systemImage: "chevron.left") }
+                            .disabled(!store.canGoBack).help("后退 · ⌘[")
+                            .accessibilityIdentifier("workspace.back")
+                        Button { store.goForward() } label: { Label("前进", systemImage: "chevron.right") }
+                            .disabled(!store.canGoForward).help("前进 · ⌘]")
+                            .accessibilityIdentifier("workspace.forward")
                     }
                 }
             }

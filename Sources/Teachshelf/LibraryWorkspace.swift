@@ -96,7 +96,8 @@ struct LibraryWorkspace: View {
     }
 
     private var commandBar: some View {
-        WorkspaceCommandBar(title: store.title, subtitle: subtitle, countLabel: "\(store.materialBrowserSelectableIDs.count) 份") {
+        WorkspaceCommandBar(title: store.title, subtitle: subtitle, countLabel: "\(store.materialBrowserSelectableIDs.count) 份",
+                            toolbarSubtitle: toolbarSummary) {
             Button(store.materialEditing ? "完成" : "编辑") {
                 guard store.beforeLeavingMaterial?() != false else { return }
                 store.materialEditing.toggle()
@@ -113,6 +114,8 @@ struct LibraryWorkspace: View {
                 showInspector.toggle()
             } label: { Image(systemName: "sidebar.right") }.buttonStyle(.borderless).help("资料信息")
                 .disabled(store.selectedMaterial == nil)
+            Button { store.chooseImport() } label: { Label("导入资料", systemImage: "plus") }
+                .help("导入文件或文件夹 · ⌘O").disabled(store.isBusy)
         } controls: {
             ZStack {
                 filters.opacity(store.materialEditing ? 0 : 1).allowsHitTesting(!store.materialEditing).accessibilityHidden(store.materialEditing)
@@ -120,6 +123,15 @@ struct LibraryWorkspace: View {
             }.frame(height: 32)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: store.materialEditing)
         }
+    }
+
+    private var toolbarSummary: String {
+        let count = "\(store.materialBrowserSelectableIDs.count) 份资料"
+        if store.materialEditing { return "已选 \(store.selectedVisibleMaterialIDs.count) 份 · \(count)" }
+        if let folder = store.state.materialFolders.first(where: { $0.id == store.materialFolderID }) {
+            return "\(folder.name) · \(count)"
+        }
+        return count
     }
 
     private var filters: some View {

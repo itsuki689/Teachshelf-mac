@@ -23,6 +23,12 @@ import AppKit
                 Button("保存资料信息") { NotificationCenter.default.post(name: .saveMaterial, object: nil) }.keyboardShortcut("s")
                     .disabled(store.selectedMaterial == nil)
             }
+            CommandMenu("前往") {
+                Button("后退") { store.goBack() }.keyboardShortcut("[")
+                    .disabled(!store.canGoBack || store.isBusy)
+                Button("前进") { store.goForward() }.keyboardShortcut("]")
+                    .disabled(!store.canGoForward || store.isBusy)
+            }
             CommandMenu("资料") {
                 Button("打开") { if let m = store.selectedMaterial { store.openMaterial(m) } }.keyboardShortcut(.return, modifiers: .command)
                 Button("快速查看") { if let m = store.selectedMaterial { QuickLookController.shared.show(try? store.repository.resolveURL(m)) } }.keyboardShortcut("y")
