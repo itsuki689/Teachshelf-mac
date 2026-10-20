@@ -22,6 +22,47 @@ struct MaterialOrganizationTests {
         try action(root, repo, course, repo.state.materials)
     }
 
+    @Test func folderNameAndColorSurviveReopenAndResetToInheritedColor() throws {
+        let root = fm.temporaryDirectory.appendingPathComponent("Teachshelf-folder-color-\(UUID())")
+        defer { try? fm.removeItem(at: root) }
+        var repo: LibraryRepository? = try LibraryRepository(root: root)
+        let course = Course(name: "颜色课程"); try repo!.saveCourse(course)
+        let parent = try repo!.createMaterialFolder(name: "父目录", courseID: course.id)
+        let folder = try repo!.createMaterialFolder(name: "初名", courseID: course.id, parentID: parent.id)
+        try repo!.updateMaterialFolder(id: folder.id, name: " 新名字 ", colorHex: "8058a1")
+        repo = nil
+        let reopened = try LibraryRepository(root: root)
+        let saved = try #require(reopened.state.materialFolders.first { $0.id == folder.id })
+        #expect(saved.name == "新名字" && saved.colorHex == "#8058A1")
+        #expect(saved.parentID == parent.id && saved.courseID == course.id && saved.createdAt == folder.createdAt)
+        try reopened.renameMaterialFolder(id: folder.id, name: "只改名称")
+        #expect(reopened.state.materialFolders.first { $0.id == folder.id }?.colorHex == "#8058A1")
+        try reopened.updateMaterialFolder(id: folder.id, name: "只改名称", colorHex: nil)
+        #expect(reopened.state.materialFolders.first { $0.id == folder.id }?.colorHex == nil)
+    }
+
+    @Test func folderColorEditsRejectInvalidValuesAndRollbackFailedSaves() throws {
+        try fixture { _, repo, course, records in
+            let folder = try repo.createMaterialFolder(name: "保留名称", courseID: course.id, materialIDs: [records[0].id])
+            let snapshot = repo.state
+            #expect(throws: (any Error).self) { try repo.updateMaterialFolder(id: folder.id, name: "不会改变", colorHex: "invalid") }
+            #expect(throws: (any Error).self) { try repo.updateMaterialFolder(id: folder.id, name: "../", colorHex: "#8058A1") }
+            #expect(repo.state == snapshot)
+            let index = repo.root.appendingPathComponent("library.json")
+            try fm.removeItem(at: index); try fm.createDirectory(at: index, withIntermediateDirectories: false)
+            #expect(throws: (any Error).self) { try repo.updateMaterialFolder(id: folder.id, name: "保存失败", colorHex: "#8058A1") }
+            #expect(repo.state == snapshot)
+        }
+    }
+
+    @Test func legacyFolderWithoutColorStillDecodes() throws {
+        let folder = MaterialFolder(courseID: UUID(), name: "旧文件夹")
+        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(folder)) as? [String: Any])
+        object.removeValue(forKey: "colorHex")
+        let decoded = try JSONDecoder().decode(MaterialFolder.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(decoded == folder && decoded.colorHex == nil)
+    }
+
     @Test func naturalNamesNewestFirstAndCustomOrderRemainIndependent() throws {
         try fixture { _, repo, course, records in
             #expect(MaterialOrdering.sorted(records, by: .name).filter { $0.title.hasPrefix("第") }.map(\.title) == ["第1章", "第2章", "第10章"])

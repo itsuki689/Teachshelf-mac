@@ -78,13 +78,6 @@ extension AppStore {
         let repo = repository
         Task { await runOperation("正在生成 ZIP…") { try repo.exportMaterials(ids: ids, to: target); return "已导出 \(ids.count) 份资料到 \(target.lastPathComponent)" } }
     }
-    func renameMaterialFolder(_ folder: MaterialFolder) {
-        let alert = NSAlert(); alert.messageText = "重命名文件夹"
-        let input = NSTextField(string: folder.name); input.frame = NSRect(x: 0, y: 0, width: 280, height: 24)
-        alert.accessoryView = input; alert.addButton(withTitle: "保存"); alert.addButton(withTitle: "取消")
-        alert.window.initialFirstResponder = input
-        if alert.runModal() == .alertFirstButtonReturn { perform { try repository.renameMaterialFolder(id: folder.id, name: input.stringValue) } }
-    }
     func dissolveMaterialFolder(_ folder: MaterialFolder) {
         let alert = NSAlert(); alert.messageText = "解散「\(folder.name)」？"
         alert.informativeText = "所有子文件夹中的资料移回上一级，文件和资料记录保留。"
@@ -142,6 +135,50 @@ struct MaterialFolderSheet: View {
             else { try store.repository.moveMaterials(ids: ids, to: target, courseID: courseID) }
             store.selectedMaterialIDs = []; store.reload(); store.status = ids.isEmpty ? "文件夹已创建" : "已整理 \(ids.count) 份资料"
             dismiss()
+        } catch { store.report(error) }
+    }
+}
+
+struct MaterialFolderEditor: View {
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    let folder: MaterialFolder
+    @ViewState private var name: String
+    @ViewState private var color: Color
+    @ViewState private var customColor: Bool
+    init(folder: MaterialFolder, inheritedColor: Color) {
+        self.folder = folder
+        _name = State(initialValue: folder.name)
+        _color = State(initialValue: folder.colorHex.map { Color(hex: $0) } ?? inheritedColor)
+        _customColor = State(initialValue: folder.colorHex != nil)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Label("编辑文件夹", systemImage: "folder.fill").font(.title2.weight(.semibold)).foregroundStyle(color)
+            TextField("文件夹名称", text: $name).textFieldStyle(.roundedBorder).accessibilityLabel("文件夹名称")
+            ColorPicker("文件夹颜色", selection: Binding(get: { color }, set: { color = $0; customColor = true }), supportsOpacity: false)
+            HStack(spacing: 10) {
+                ForEach(ColorPalette.themes, id: \.hex) { choice in
+                    Button { color = Color(hex: choice.hex); customColor = true } label: {
+                        Circle().fill(Color(hex: choice.hex)).frame(width: 19, height: 19)
+                            .overlay { Circle().strokeBorder(Color.primary.opacity(color.hexString == choice.hex ? 0.8 : 0), lineWidth: 2).padding(-3) }
+                    }.buttonStyle(.plain).help(choice.name).accessibilityLabel("文件夹颜色：\(choice.name)")
+                }
+            }
+            Button("跟随课程颜色") { color = store.courseColor(folder.courseID); customColor = false }.buttonStyle(.plain).foregroundStyle(.secondary)
+            Divider()
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("保存") { save() }.appPrimaryButton().keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }.padding(26).frame(width: 420).dismissColorPanelAutomatically()
+    }
+    private func save() {
+        do {
+            try store.repository.updateMaterialFolder(id: folder.id, name: name, colorHex: customColor ? color.hexString : nil)
+            store.reload(); store.status = "文件夹已保存"; dismiss()
         } catch { store.report(error) }
     }
 }

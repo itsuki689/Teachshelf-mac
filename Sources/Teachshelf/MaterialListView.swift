@@ -21,7 +21,7 @@ struct MaterialListView: NSViewRepresentable {
     var browserRows: [MaterialBrowserRow]?
     var onToggleFolder: ((MaterialFolder) -> Void)?
     var onOpenFolder: ((MaterialFolder) -> Void)?
-    var onRenameFolder: ((MaterialFolder) -> Void)?
+    var onEditFolder: ((MaterialFolder) -> Void)?
     var onDissolveFolder: ((MaterialFolder) -> Void)?
     var onMoveToFolder: ((Set<UUID>, UUID) -> Void)?
     private var rows: [MaterialBrowserRow] { browserRows ?? items.map { .file($0) } }
@@ -39,7 +39,7 @@ struct MaterialListView: NSViewRepresentable {
          onFavorite: @escaping (MaterialRecord) -> Void, onRemove: @escaping (Set<UUID>) -> Void,
          browserRows: [MaterialBrowserRow]? = nil,
          onToggleFolder: ((MaterialFolder) -> Void)? = nil, onOpenFolder: ((MaterialFolder) -> Void)? = nil,
-         onRenameFolder: ((MaterialFolder) -> Void)? = nil, onDissolveFolder: ((MaterialFolder) -> Void)? = nil,
+         onEditFolder: ((MaterialFolder) -> Void)? = nil, onDissolveFolder: ((MaterialFolder) -> Void)? = nil,
          onMoveToFolder: ((Set<UUID>, UUID) -> Void)? = nil,
          editing: Bool = false, dragData: @escaping (Set<UUID>) -> Data? = { _ in nil },
          onReorder: ((Set<UUID>, UUID?) -> Void)? = nil,
@@ -49,7 +49,7 @@ struct MaterialListView: NSViewRepresentable {
         self.onOpen = onOpen; self.onQuickLook = onQuickLook; self.onReveal = onReveal
         self.onFavorite = onFavorite; self.onRemove = onRemove
         self.browserRows = browserRows; self.onToggleFolder = onToggleFolder; self.onOpenFolder = onOpenFolder
-        self.onRenameFolder = onRenameFolder; self.onDissolveFolder = onDissolveFolder; self.onMoveToFolder = onMoveToFolder
+        self.onEditFolder = onEditFolder; self.onDissolveFolder = onDissolveFolder; self.onMoveToFolder = onMoveToFolder
         self.editing = editing; self.dragData = dragData; self.onReorder = onReorder
         self.onGroup = onGroup; self.onExport = onExport
     }
@@ -152,6 +152,9 @@ struct MaterialListView: NSViewRepresentable {
             } else { table.reloadData() }
             coordinator.hasLoaded = true
         }
+        table.folderGuideController.update(in: table, guides: MaterialFolderGuide.project(rows) { folder in
+            folder.colorHex ?? courseColor(folder.courseID).hexString
+        }, reduceMotion: reduceMotion)
         coordinator.synchronizeSelection()
         coordinator.refreshVisibleRows()
         coordinator.synchronizing = false
@@ -163,6 +166,7 @@ struct MaterialListView: NSViewRepresentable {
         coordinator.table?.enumerateAvailableRowViews { row, _ in
             (row as? MaterialAnimatedRow)?.stopAnimations()
         }
+        coordinator.table?.folderGuideController.removeAll()
         coordinator.table?.stopHoverTracking()
         coordinator.table?.delegate = nil
         coordinator.table?.dataSource = nil
@@ -295,7 +299,7 @@ struct MaterialListView: NSViewRepresentable {
                 }
             } else if let folder = row.folder {
                 if let cell = view as? MaterialFolderCell {
-                    cell.configure(folder: folder, depth: row.depth, expanded: row.isExpanded, count: row.materialIDs.count, theme: parent.theme) { [weak self] in self?.parent.onToggleFolder?(folder) }
+                    cell.configure(folder: folder, depth: row.depth, expanded: row.isExpanded, count: row.materialIDs.count, color: folder.colorHex.map { Color(hex: $0) } ?? parent.courseColor(folder.courseID), theme: parent.theme) { [weak self] in self?.parent.onToggleFolder?(folder) }
                 } else if let cell = view as? MaterialCategoryCell { cell.configure("文件夹", theme: parent.theme) }
                 else if let cell = view as? MaterialInfoCell {
                     cell.label.stringValue = column == "size" ? "\(row.materialIDs.count) 份资料" : dateFormatter.string(from: folder.createdAt)
@@ -368,7 +372,7 @@ struct MaterialListView: NSViewRepresentable {
 
         private func folderMenu(_ folder: MaterialFolder, row: MaterialBrowserRow) -> NSMenu {
             let menu = NSMenu()
-            for (title, tag) in [("进入文件夹", 10), (row.isExpanded ? "收起文件夹" : "展开文件夹", 11), ("重命名…", 12), ("解散文件夹…", 13)] {
+            for (title, tag) in [("进入文件夹", 10), (row.isExpanded ? "收起文件夹" : "展开文件夹", 11), ("编辑名称与颜色…", 12), ("解散文件夹…", 13)] {
                 let item = NSMenuItem(title: title, action: #selector(runFolderAction(_:)), keyEquivalent: "")
                 item.target = self; item.tag = tag; item.representedObject = folder.id; menu.addItem(item)
             }
@@ -379,7 +383,7 @@ struct MaterialListView: NSViewRepresentable {
             switch sender.tag {
             case 10: parent.onOpenFolder?(folder)
             case 11: parent.onToggleFolder?(folder)
-            case 12: parent.onRenameFolder?(folder)
+            case 12: parent.onEditFolder?(folder)
             case 13: parent.onDissolveFolder?(folder)
             default: break
             }
@@ -451,6 +455,7 @@ private final class MaterialMenuCommand: NSObject {
 }
 
 final class MaterialNativeTable: NSTableView {
+    let folderGuideController = MaterialFolderGuideController()
     var folderClick: ((Int, Bool) -> Bool)?
     var editingSelection = false
     var dragStarted = false
@@ -471,7 +476,7 @@ final class MaterialNativeTable: NSTableView {
     override func mouseEntered(with event: NSEvent) { synchronizePointerHover(at: event.locationInWindow) }
     override func mouseMoved(with event: NSEvent) { synchronizePointerHover(at: event.locationInWindow) }
     override func mouseExited(with event: NSEvent) { updateHoveredRow(at: nil) }
-    override func layout() { super.layout(); synchronizePointerHover() }
+    override func layout() { super.layout(); folderGuideController.layout(in: self); synchronizePointerHover() }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         stopHoverTracking()
@@ -567,7 +572,7 @@ final class MaterialAnimatedRow: NSTableRowView {
     private var representedID: UUID?
     private var depth = 0
     var highlightFrame: NSRect {
-        let left = min(bounds.width, 6 + CGFloat(depth) * 22)
+        let left = min(bounds.width, MaterialBrowserLayout.borderInset(depth: depth))
         return NSRect(x: bounds.minX + left, y: bounds.minY + 4, width: max(0, bounds.width - left - 6), height: max(0, bounds.height - 8))
     }
 
@@ -743,12 +748,12 @@ private final class MaterialFolderCell: NSTableCellView {
         textField = titleLabel
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    func configure(folder: MaterialFolder, depth: Int, expanded: Bool, count: Int, theme: AppTheme, action: @escaping () -> Void) {
+    func configure(folder: MaterialFolder, depth: Int, expanded: Bool, count: Int, color: Color, theme: AppTheme, action: @escaping () -> Void) {
         indent.constant = CGFloat(depth) * 22
         self.action = action
         titleLabel.stringValue = folder.name; detail.stringValue = "\(count) 份资料"
         icon.image = NSImage(systemSymbolName: expanded ? "folder.fill" : "folder", accessibilityDescription: "文件夹")
-        icon.contentTintColor = NSColor(theme.ink)
+        icon.contentTintColor = NSColor(color)
         disclosure.image = NSImage(systemSymbolName: expanded ? "chevron.down" : "chevron.right", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 9, weight: .semibold))
         disclosure.contentTintColor = .secondaryLabelColor
         disclosure.setAccessibilityLabel("\(expanded ? "收起" : "展开")文件夹：\(folder.name)")

@@ -62,3 +62,27 @@ struct MaterialBrowserSection: Identifiable {
         if !expandedMaterialFolderIDs.insert(id).inserted { expandedMaterialFolderIDs.remove(id) }
     }
 }
+
+/// Leave a little more room between the hierarchy marker and each child surface.
+enum MaterialBrowserLayout {
+    static func contentInset(depth: Int) -> CGFloat { CGFloat(depth) * 22 }
+    static func borderInset(depth: Int) -> CGFloat { 6 + contentInset(depth: depth) + (depth > 0 ? 6 : 0) }
+}
+
+struct MaterialFolderGuide: Identifiable, Equatable {
+    let id: UUID
+    let depth: Int
+    let firstChild: Int
+    let lastChild: Int
+    let colorHex: String
+
+    static func project(_ rows: [MaterialBrowserRow], color: (MaterialFolder) -> String) -> [Self] {
+        rows.indices.compactMap { index in
+            let row = rows[index]
+            guard let folder = row.folder, row.isExpanded, index + 1 < rows.count, rows[index + 1].depth > row.depth else { return nil }
+            var end = index + 1
+            while end + 1 < rows.count && rows[end + 1].depth > row.depth { end += 1 }
+            return Self(id: folder.id, depth: row.depth, firstChild: index + 1, lastChild: end, colorHex: color(folder))
+        }
+    }
+}

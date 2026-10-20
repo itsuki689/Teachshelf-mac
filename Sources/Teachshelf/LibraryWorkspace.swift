@@ -12,6 +12,7 @@ struct LibraryWorkspace: View {
     @ViewState private var showInspector = true
     @ViewState private var showingCoursePlans = false
     @ViewState private var folderRequest: MaterialFolderRequest?
+    @ViewState private var folderToEdit: MaterialFolder?
     @ViewState private var reorderTargetID: UUID?
     private var rows: [MaterialBrowserRow] { store.materialBrowserRows }
     private var items: [MaterialRecord] { rows.compactMap(\.material) }
@@ -83,6 +84,7 @@ struct LibraryWorkspace: View {
         .sheet(isPresented: $showingCoursePlans) {
             PlanListSheet(courseID: store.currentCourseID, pendingOnly: true)
         }
+        .sheet(item: $folderToEdit) { folder in MaterialFolderEditor(folder: folder, inheritedColor: store.courseColor(folder.courseID)).environmentObject(store) }
         .sheet(item: $folderRequest) { request in MaterialFolderSheet(ids: request.ids, parentID: request.parentID).environmentObject(store) }
     }
 
@@ -158,7 +160,7 @@ struct LibraryWorkspace: View {
                          onFavorite: { store.favorite($0) }, onRemove: { store.removeMaterials($0) },
                          browserRows: rows,
                          onToggleFolder: { store.toggleMaterialFolder($0.id) }, onOpenFolder: { store.openMaterialFolder($0.id) },
-                         onRenameFolder: { store.renameMaterialFolder($0) }, onDissolveFolder: { store.dissolveMaterialFolder($0) },
+                         onEditFolder: { folderToEdit = $0 }, onDissolveFolder: { store.dissolveMaterialFolder($0) },
                          onMoveToFolder: { ids, folderID in
                              guard let courseID = store.currentCourseID else { return }
                              store.perform { try store.repository.moveMaterials(ids: ids, to: folderID, courseID: courseID); store.selectedMaterialIDs.subtract(ids) }
@@ -169,23 +171,42 @@ struct LibraryWorkspace: View {
                          onExport: { store.exportMaterials($0) })
     }
 
+    private var coverGuides: [MaterialFolderGuide] {
+        MaterialFolderGuide.project(rows) { $0.colorHex ?? store.courseColor($0.courseID).hexString }
+    }
     private var coverGrid: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 18) {
                 ForEach(MaterialBrowserSection.sections(from: rows)) { section in
-                    if let first = section.rows.first, first.folder != nil {
-                        folderCoverRow(first)
-                    } else {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 155, maximum: 200), spacing: 24)], alignment: .leading, spacing: 26) {
-                            ForEach(section.rows) { row in
-                                let material = row.material!
-                                coverCard(material)
-                            }
-                        }.padding(.leading, CGFloat(section.rows.first?.depth ?? 0) * 22)
+                    Group {
+                        if let first = section.rows.first, first.folder != nil {
+                            folderCoverRow(first)
+                        } else {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 155, maximum: 200), spacing: 24)], alignment: .leading, spacing: 26) {
+                                ForEach(section.rows) { row in coverCard(row.material!) }
+                            }.padding(.leading, MaterialBrowserLayout.borderInset(depth: section.rows.first?.depth ?? 0) - 6)
+                        }
+                    }.anchorPreference(key: MaterialCoverBounds.self, value: .bounds) { anchor in
+                        Dictionary(uniqueKeysWithValues: section.rows.map { ($0.id, anchor) })
                     }
                 }
-            }.padding(24)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: rows.map(\.id))
+            }
+            .overlayPreferenceValue(MaterialCoverBounds.self) { anchors in
+                GeometryReader { proxy in
+                    ForEach(coverGuides) { guide in
+                        if let first = anchors[rows[guide.firstChild].id], let last = anchors[rows[guide.lastChild].id] {
+                            let top = proxy[first].minY, bottom = proxy[last].maxY
+                            RoundedRectangle(cornerRadius: 3).fill(Color(hex: guide.colorHex))
+                                .frame(width: 6, height: max(0, bottom - top))
+                                .position(x: MaterialBrowserLayout.borderInset(depth: guide.depth + 1) - 15, y: (top + bottom) / 2)
+                                .transition(.scale(scale: 0.01, anchor: .top).combined(with: .opacity))
+                        }
+                    }
+                }.allowsHitTesting(false).accessibilityHidden(true)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: coverGuides)
+            }
+            .padding(24)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: rows.map(\.id))
         }.background(Color(nsColor: .underPageBackgroundColor).opacity(0.35))
             .focusable().focusEffectDisabled()
             .onKeyPress(.space) {
@@ -280,7 +301,7 @@ struct LibraryWorkspace: View {
                 })).toggleStyle(.checkbox).labelsHidden().disabled(row.materialIDs.isEmpty)
                     .opacity(store.materialEditing ? 1 : 0).allowsHitTesting(store.materialEditing).accessibilityHidden(!store.materialEditing)
             Image(systemName: row.isExpanded ? "chevron.down" : "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
-            Image(systemName: "folder.fill").font(.system(size: 28)).foregroundStyle(theme.ink)
+            Image(systemName: "folder.fill").font(.system(size: 28)).foregroundStyle(folder.colorHex.map { Color(hex: $0) } ?? store.courseColor(folder.courseID))
             VStack(alignment: .leading, spacing: 3) {
                 Text(folder.name).font(.system(size: 13, weight: .medium))
                 Text("文件夹 · \(row.materialIDs.count) 份资料").font(.caption).foregroundStyle(.secondary)
@@ -294,11 +315,11 @@ struct LibraryWorkspace: View {
             .accessibilityElement(children: .contain).accessibilityLabel("\(folder.name)，文件夹")
             .contextMenu {
                 Button("进入文件夹") { store.openMaterialFolder(folder.id) }
-                Button("重命名…") { store.renameMaterialFolder(folder) }
+                Button("编辑名称与颜色…") { folderToEdit = folder }
                 Button("解散文件夹…") { store.dissolveMaterialFolder(folder) }
             }
             .onDrop(of: [.teachshelfMaterial], isTargeted: nil) { store.acceptMaterialDrop($0, into: folder.id, grouping: true) }
-            .padding(.leading, CGFloat(row.depth) * 22)
+            .padding(.leading, MaterialBrowserLayout.borderInset(depth: row.depth) - 6)
     }
 
 }
@@ -331,5 +352,12 @@ enum FileDropLoader {
             }
             completion(urls)
         }
+    }
+}
+
+private struct MaterialCoverBounds: PreferenceKey {
+    static var defaultValue: [UUID: Anchor<CGRect>] = [:]
+    static func reduce(value: inout [UUID: Anchor<CGRect>], nextValue: () -> [UUID: Anchor<CGRect>]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
     }
 }

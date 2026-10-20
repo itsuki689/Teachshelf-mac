@@ -1690,6 +1690,15 @@ extension LibraryRepository {
         }
     }
 
+    public func updateMaterialFolder(id: UUID, name: String, colorHex: String?) throws {
+        try commit { state in
+            guard let index = state.materialFolders.firstIndex(where: { $0.id == id }) else { throw LibraryError.missingRecord("文件夹") }
+            if let colorHex, RGBColor(hex: colorHex) == nil { throw LibraryError.invalidInput("请输入六位 HEX 文件夹颜色。") }
+            state.materialFolders[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            state.materialFolders[index].colorHex = colorHex.flatMap { RGBColor(hex: $0)?.hex }
+        }
+    }
+
     public func moveMaterials(ids: Set<UUID>, to folderID: UUID?, courseID: UUID) throws {
         try commit { state in
             try Self.ensureMaterialIDs(ids, courseID: courseID, in: state)
@@ -1822,6 +1831,7 @@ extension LibraryRepository {
         guard Set(state.materialFolders.map(\.id)).count == state.materialFolders.count else { throw LibraryError.invalidInput("文件夹编号重复。") }
         var names: Set<String> = []
         for folder in state.materialFolders {
+            if let color = folder.colorHex, !ColorPalette.isStoredColor(color) { throw LibraryError.invalidInput("文件夹颜色无效。") }
             guard state.courses.contains(where: { $0.id == folder.courseID }), !folder.name.isEmpty,
                   folder.name == folder.name.trimmingCharacters(in: .whitespacesAndNewlines),
                   folder.name.utf8.count <= 120, folder.name != ".", folder.name != "..",
