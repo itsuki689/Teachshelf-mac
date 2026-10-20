@@ -214,13 +214,13 @@ final class PlanTests {
         try FileManager.default.createDirectory(at: legacyRoot, withIntermediateDirectories: true)
         let url = legacyRoot.appendingPathComponent("library.json"); try bytes.write(to: url)
         let migrated = try LibraryRepository(root: legacyRoot)
-        #expect(migrated.state.schemaVersion == 5 && !migrated.state.tasks[0].hasExecutionTime)
+        #expect(migrated.state.schemaVersion == 6 && !migrated.state.tasks[0].hasExecutionTime)
         #expect(migrated.state.tasks[0].startsAt == plan.startsAt)
         #expect(PlanCalendar.events(on: plan.startsAt, plans: migrated.state.tasks).isEmpty)
         #expect(PlanCalendar.events(on: plan.deadline!, plans: migrated.state.tasks)[0].isDeadline)
         #expect(try Data(contentsOf: url) == bytes)
         try migrated.saveAppearance("dark")
-        #expect(try JSONDecoder().decode(LibraryState.self, from: Data(contentsOf: url)).schemaVersion == 5)
+        #expect(try JSONDecoder().decode(LibraryState.self, from: Data(contentsOf: url)).schemaVersion == 6)
         #expect(try Data(contentsOf: legacyRoot.appendingPathComponent("library.json.bak")) == bytes)
     }
     @Test func courseMonthPreferenceSurvivesPortalReimport() throws {

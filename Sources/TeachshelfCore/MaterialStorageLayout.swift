@@ -25,7 +25,7 @@ enum MaterialStorageLayout {
         return "\(directory)/\(material.id.uuidString)-\(name)"
     }
 
-    private static func component(_ text: String, byteLimit: Int) -> String {
+    static func component(_ text: String, byteLimit: Int) -> String {
         let cleaned = String(text.unicodeScalars.map { scalar -> Character in
             if CharacterSet.controlCharacters.contains(scalar) || "/\\:".unicodeScalars.contains(scalar) { return "_" }
             return Character(String(scalar))

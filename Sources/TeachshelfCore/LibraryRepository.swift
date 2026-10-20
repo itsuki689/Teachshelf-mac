@@ -42,10 +42,10 @@ public final class LibraryRepository: @unchecked Sendable {
             throw DecodingError.dataCorruptedError(in: value, debugDescription: "无法读取日期：\(text)")
         }
         var state = try decoder.decode(LibraryState.self, from: data)
-        // Older builds cannot preserve plan attributes and occurrence exceptions. Upgrade only
-        // the in-memory snapshot on read; the next successful mutation writes
-        // version 5, which those builds refuse to open.
-        if [1, 2, 3, 4].contains(state.schemaVersion) { state.schemaVersion = 5 }
+        // Older builds cannot preserve material folders, sorting, or plan attributes.
+        // Upgrade the in-memory snapshot on read; the next successful mutation or
+        // storage migration writes version 6, which those builds refuse to open.
+        if (1...5).contains(state.schemaVersion) { state.schemaVersion = 6 }
         return state
     }
 
@@ -333,6 +333,10 @@ public final class LibraryRepository: @unchecked Sendable {
         try commit { state in
             guard let course = state.courses.first(where: { $0.id == id }) else { throw LibraryError.missingRecord("课程") }
             state.courses.removeAll { $0.id == id }
+            state.materialFolders.removeAll { $0.courseID == id }
+            for index in state.materials.indices where state.materials[index].courseID == id {
+                state.materials[index].folderID = nil; state.materials[index].customOrder = nil
+            }
             for index in state.materials.indices where state.materials[index].courseID == id { state.materials[index].courseID = nil }
             for index in state.tasks.indices where state.tasks[index].courseID == id {
                 state.tasks[index].courseID = nil
@@ -376,6 +380,7 @@ public final class LibraryRepository: @unchecked Sendable {
                 throw LibraryError.invalidInput("编辑资料时不能改变文件位置，请重新导入文件。")
             }
             var material = material
+            if material.courseID != existing.courseID { material.folderID = nil; material.customOrder = nil }
             material.category = try rememberCategory(material.category, in: &state)
             state.materials[index] = material
         }
@@ -434,9 +439,10 @@ public final class LibraryRepository: @unchecked Sendable {
         }
     }
 
-    public func importFiles(urls: [URL], courseID: UUID?, category: String, copy: Bool) throws -> ImportSummary {
+    public func importFiles(urls: [URL], courseID: UUID?, category: String, copy: Bool, folderID: UUID? = nil) throws -> ImportSummary {
         try withLock {
             try ensureCourse(courseID)
+            try Self.ensureMaterialFolder(folderID, courseID: courseID, in: snapshot)
             var next = snapshot
             let normalizedCategory = try rememberCategory(category, in: &next)
             var summary = ImportSummary()
@@ -450,6 +456,11 @@ public final class LibraryRepository: @unchecked Sendable {
                         let id = UUID()
                         let name = source.lastPathComponent
                         var material = MaterialRecord(id: id, courseID: courseID, title: source.deletingPathExtension().lastPathComponent, originalName: name, sourcePath: source.path, storedPath: source.path, isManaged: copy, category: normalizedCategory)
+                        material.folderID = folderID
+                        let existingRanks = next.materials.filter { $0.courseID == courseID && $0.folderID == folderID }.compactMap(\.customOrder)
+                        if !existingRanks.isEmpty || next.courses.first(where: { $0.id == courseID })?.materialSort == .custom {
+                            material.customOrder = (existingRanks.max() ?? -1) + 1
+                        }
                         if copy { material.storedPath = MaterialStorageLayout.relativePath(for: material, courses: next.courses) }
                         let values = try source.resourceValues(forKeys: [.fileSizeKey])
                         material.size = Int64(values.fileSize ?? 0)
@@ -560,7 +571,8 @@ public final class LibraryRepository: @unchecked Sendable {
         if let id, !snapshot.courses.contains(where: { $0.id == id }) { throw LibraryError.missingRecord("课程") }
     }
     private func validate(_ state: LibraryState) throws {
-        guard state.schemaVersion == 5 else { throw LibraryError.invalidInput("不支持的资料库版本 \(state.schemaVersion)。") }
+        guard state.schemaVersion == 6 else { throw LibraryError.invalidInput("不支持的资料库版本 \(state.schemaVersion)。") }
+        try Self.validateMaterialOrganization(state)
         guard ["system", "light", "dark"].contains(state.appearance) else { throw LibraryError.invalidInput("未知的外观设置。") }
         guard ColorPalette.isStoredColor(state.accentColor) else { throw LibraryError.invalidInput("资料库包含无效的强调色。") }
         guard Set(state.courses.map(\.id)).count == state.courses.count,
@@ -1616,6 +1628,218 @@ extension LibraryRepository {
             var effective = PlanCalendar.snapshot(of: task, originalDate: exception.originalDate)
             effective.repeatRule = nil; effective.exceptions = []; effective.archivedAt = nil
             try validatePlan(effective, courseIDs: courseIDs, materialIDs: materialIDs)
+        }
+    }
+}
+
+extension LibraryRepository {
+    public func setMaterialSort(_ mode: MaterialSortMode, courseID: UUID) throws {
+        try commit { state in
+            guard let index = state.courses.firstIndex(where: { $0.id == courseID }) else { throw LibraryError.missingRecord("课程") }
+            if mode == .custom {
+                let previous = state.courses[index].materialSort ?? .time
+                let records = state.materials.filter { $0.courseID == courseID }
+                for group in Dictionary(grouping: records, by: \.folderID).values where group.allSatisfy({ $0.customOrder == nil }) {
+                    for (rank, material) in MaterialOrdering.sorted(group, by: previous).enumerated() {
+                        state.materials[state.materials.firstIndex { $0.id == material.id }!].customOrder = rank
+                    }
+                }
+            }
+            state.courses[index].materialSort = mode
+        }
+    }
+
+    public func reorderMaterials(ids: Set<UUID>, before target: UUID?, courseID: UUID, folderID: UUID?) throws {
+        try commit { state in
+            try Self.ensureMaterialIDs(ids, courseID: courseID, in: state)
+            try Self.ensureMaterialFolder(folderID, courseID: courseID, in: state)
+            guard !ids.isEmpty else { return }
+            let records = MaterialOrdering.sorted(state.materials.filter { $0.courseID == courseID && $0.folderID == folderID }, by: .custom)
+            guard ids.isSubset(of: Set(records.map(\.id))), target == nil || records.contains(where: { $0.id == target }) else {
+                throw LibraryError.invalidInput("只能调整当前文件夹中的资料顺序。")
+            }
+            if let target, ids.contains(target) { return }
+            let moving = records.filter { ids.contains($0.id) }
+            var remaining = records.filter { !ids.contains($0.id) }
+            let index = target.flatMap { id in remaining.firstIndex { $0.id == id } } ?? remaining.count
+            remaining.insert(contentsOf: moving, at: index)
+            for (rank, record) in remaining.enumerated() {
+                state.materials[state.materials.firstIndex { $0.id == record.id }!].customOrder = rank
+            }
+            state.courses[state.courses.firstIndex { $0.id == courseID }!].materialSort = .custom
+        }
+    }
+
+    @discardableResult
+    public func createMaterialFolder(name: String, courseID: UUID, parentID: UUID? = nil, materialIDs: Set<UUID> = []) throws -> MaterialFolder {
+        var result: MaterialFolder!
+        try commit { state in
+            try Self.ensureMaterialIDs(materialIDs, courseID: courseID, in: state)
+            try Self.ensureMaterialFolder(parentID, courseID: courseID, in: state)
+            result = MaterialFolder(courseID: courseID, parentID: parentID, name: name.trimmingCharacters(in: .whitespacesAndNewlines))
+            state.materialFolders.append(result)
+            Self.assignMaterials(materialIDs, to: result.id, in: &state)
+        }
+        return result
+    }
+
+    public func renameMaterialFolder(id: UUID, name: String) throws {
+        try commit { state in
+            guard let index = state.materialFolders.firstIndex(where: { $0.id == id }) else { throw LibraryError.missingRecord("文件夹") }
+            state.materialFolders[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    public func moveMaterials(ids: Set<UUID>, to folderID: UUID?, courseID: UUID) throws {
+        try commit { state in
+            try Self.ensureMaterialIDs(ids, courseID: courseID, in: state)
+            try Self.ensureMaterialFolder(folderID, courseID: courseID, in: state)
+            Self.assignMaterials(ids, to: folderID, in: &state)
+        }
+    }
+
+    /// Dissolving a group returns all descendants to its parent without deleting files.
+    public func dissolveMaterialFolder(id: UUID) throws {
+        try commit { state in
+            guard let folder = state.materialFolders.first(where: { $0.id == id }) else { throw LibraryError.missingRecord("文件夹") }
+            let descendants = Set(state.materialFolders.filter { MaterialOrdering.folderPath($0.id, in: state.materialFolders).contains(where: { $0.id == id }) }.map(\.id))
+            let ids = Set(state.materials.filter { $0.folderID.map(descendants.contains) == true }.map(\.id))
+            Self.assignMaterials(ids, to: folder.parentID, in: &state)
+            state.materialFolders.removeAll { descendants.contains($0.id) }
+        }
+    }
+
+    /// Only managed library copies enter Trash; external originals remain untouched.
+    public func trashMaterials(ids: Set<UUID>) throws {
+        try trashMaterials(ids: ids, moveToTrash: { source in
+            var trashed: NSURL?
+            try fm.trashItem(at: source, resultingItemURL: &trashed)
+            guard let trashed else { throw LibraryError.invalidInput("文件已移到废纸篓，但无法记录其恢复位置。请从废纸篓恢复文件后重试。") }
+            return trashed as URL
+        })
+    }
+
+    func trashMaterials(ids: Set<UUID>, moveToTrash: (URL) throws -> URL) throws {
+        try withLock {
+            guard !ids.isEmpty, ids.isSubset(of: Set(snapshot.materials.map(\.id))) else { throw LibraryError.missingRecord("资料") }
+            var moved: [(URL, URL)] = []
+            do {
+                for record in snapshot.materials where ids.contains(record.id) && record.isManaged {
+                    let source = try fileURL(for: record)
+                    try ensureSafePath(source, beneath: filesURL)
+                    guard fm.fileExists(atPath: source.path) else { continue }
+                    guard try source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { throw LibraryError.unsafePath(source.path) }
+                    moved.append((source, try moveToTrash(source)))
+                }
+                try removeMaterials(ids: ids)
+            } catch {
+                var failed: [String] = []
+                for (original, trashed) in moved.reversed() {
+                    do { try fm.moveItem(at: trashed, to: original) }
+                    catch { failed.append(original.lastPathComponent) }
+                }
+                if !failed.isEmpty { throw LibraryError.invalidInput("删除未完成，部分文件可从废纸篓恢复：" + failed.joined(separator: "、")) }
+                throw error
+            }
+        }
+    }
+
+    public func exportMaterials(ids: Set<UUID>, to destination: URL) throws {
+        try withLock {
+            let records = snapshot.materials.filter { ids.contains($0.id) }
+            guard !ids.isEmpty, records.count == ids.count else { throw LibraryError.missingRecord("所选资料") }
+            let destination = destination.standardizedFileURL
+            try ensureSafePath(destination, beneath: nil)
+            guard !isBeneath(destination, root: root), destination.pathExtension.lowercased() == "zip" else {
+                throw LibraryError.invalidInput("请将 ZIP 导出到资料库以外的文件夹。")
+            }
+            let stage = destination.deletingLastPathComponent().appendingPathComponent(".teachshelf-export-\(UUID().uuidString)")
+            try fm.createDirectory(at: stage, withIntermediateDirectories: false)
+            defer { try? fm.removeItem(at: stage) }
+            let payload = stage.appendingPathComponent("课程资料", isDirectory: true)
+            try fm.createDirectory(at: payload, withIntermediateDirectories: false)
+            var used: Set<String> = []
+            let multipleCourses = Set(records.map(\.courseID)).count > 1
+            var directories: [UUID: URL] = [:]
+            for record in records {
+                var directory = payload
+                if multipleCourses {
+                    let course = snapshot.courses.first { $0.id == record.courseID }
+                    directory.appendPathComponent(MaterialStorageLayout.component(course?.name ?? "未分类", byteLimit: 120) + " [\(record.courseID?.uuidString ?? "未分类")]")
+                }
+                for folder in MaterialOrdering.folderPath(record.folderID, in: snapshot.materialFolders) {
+                    directory.appendPathComponent(folder.name)
+                }
+                try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+                directories[record.id] = directory
+            }
+            for record in MaterialOrdering.sorted(records, by: .custom) {
+                let source = try resolveURL(record)
+                guard try source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { throw LibraryError.unsafePath(source.path) }
+                let directory = directories[record.id]!
+                let name = MaterialStorageLayout.component(record.originalName, byteLimit: 218)
+                let ext = URL(fileURLWithPath: name).pathExtension
+                let stem = ext.isEmpty ? name : String(name.dropLast(ext.count + 1))
+                var candidate = directory.appendingPathComponent(name), number = 2
+                while fm.fileExists(atPath: candidate.path) || used.contains(candidate.path.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))) {
+                    candidate = directory.appendingPathComponent("\(stem) (\(number))" + (ext.isEmpty ? "" : ".\(ext)")); number += 1
+                }
+                used.insert(candidate.path.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX")))
+                try fm.copyItem(at: source, to: candidate)
+            }
+            let archive = stage.appendingPathComponent("export.zip")
+            let process = Process(), errors = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+            process.arguments = ["-c", "-k", "--norsrc", "--keepParent", payload.path, archive.path]
+            process.standardOutput = FileHandle.nullDevice; process.standardError = errors
+            try process.run()
+            let data = errors.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { throw LibraryError.invalidInput("压缩失败：" + (String(data: data, encoding: .utf8) ?? "无法生成 ZIP")) }
+            try ZipUTF8Names.mark(in: archive)
+            try atomicRename(archive, destination)
+        }
+    }
+
+    private static func ensureMaterialFolder(_ id: UUID?, courseID: UUID?, in state: LibraryState) throws {
+        if let id, !state.materialFolders.contains(where: { $0.id == id && $0.courseID == courseID }) {
+            throw LibraryError.invalidInput("文件夹不属于当前课程。")
+        }
+    }
+    private static func ensureMaterialIDs(_ ids: Set<UUID>, courseID: UUID, in state: LibraryState) throws {
+        guard state.courses.contains(where: { $0.id == courseID }), ids.isSubset(of: Set(state.materials.filter { $0.courseID == courseID }.map(\.id))) else {
+            throw LibraryError.invalidInput("请选择同一课程中的资料。")
+        }
+    }
+    private static func assignMaterials(_ ids: Set<UUID>, to folderID: UUID?, in state: inout LibraryState) {
+        var rank = (state.materials.filter { $0.folderID == folderID }.compactMap(\.customOrder).max() ?? -1) + 1
+        for record in MaterialOrdering.sorted(state.materials.filter { ids.contains($0.id) }, by: .custom) where record.folderID != folderID {
+            let index = state.materials.firstIndex { $0.id == record.id }!
+            state.materials[index].folderID = folderID; state.materials[index].customOrder = rank; rank += 1
+        }
+    }
+    private static func validateMaterialOrganization(_ state: LibraryState) throws {
+        guard Set(state.materialFolders.map(\.id)).count == state.materialFolders.count else { throw LibraryError.invalidInput("文件夹编号重复。") }
+        var names: Set<String> = []
+        for folder in state.materialFolders {
+            guard state.courses.contains(where: { $0.id == folder.courseID }), !folder.name.isEmpty,
+                  folder.name == folder.name.trimmingCharacters(in: .whitespacesAndNewlines),
+                  folder.name.utf8.count <= 120, folder.name != ".", folder.name != "..",
+                  !folder.name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || "/\\:".unicodeScalars.contains($0) }) else {
+                throw LibraryError.invalidInput("文件夹名称不能为空、超过 120 字节或包含路径分隔符。")
+            }
+            try ensureMaterialFolder(folder.parentID, courseID: folder.courseID, in: state)
+            var visited: Set<UUID> = [folder.id], parent = folder.parentID
+            while let id = parent {
+                guard visited.insert(id).inserted else { throw LibraryError.invalidInput("文件夹不能形成循环。") }
+                parent = state.materialFolders.first { $0.id == id }?.parentID
+            }
+            let key = "\(folder.courseID)/\(folder.parentID?.uuidString ?? "root")/" + folder.name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            guard names.insert(key).inserted else { throw LibraryError.invalidInput("同一位置已存在同名文件夹。") }
+        }
+        for record in state.materials {
+            try ensureMaterialFolder(record.folderID, courseID: record.courseID, in: state)
+            if let rank = record.customOrder, rank < 0 || rank >= Int.max - state.materials.count - 1 { throw LibraryError.invalidInput("资料顺序无效。") }
         }
     }
 }

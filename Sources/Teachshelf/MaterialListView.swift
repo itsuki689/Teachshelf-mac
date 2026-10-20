@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import QuartzCore
+import UniformTypeIdentifiers
 import TeachshelfCore
 
 /// A native table keeps extended selection and file dragging while drawing the
@@ -17,17 +18,27 @@ struct MaterialListView: NSViewRepresentable {
     let onReveal: (MaterialRecord) -> Void
     let onFavorite: (MaterialRecord) -> Void
     let onRemove: (Set<UUID>) -> Void
+    var editing = false
+    var dragData: (Set<UUID>) -> Data? = { _ in nil }
+    var onReorder: ((Set<UUID>, UUID?) -> Void)?
+    var onGroup: ((Set<UUID>) -> Void)?
+    var onExport: ((Set<UUID>) -> Void)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(items: [MaterialRecord], selection: Binding<Set<UUID>>, theme: AppTheme,
          courseName: @escaping (UUID?) -> String, courseColor: @escaping (UUID?) -> Color,
          resolveURL: @escaping (MaterialRecord) -> URL?, onOpen: @escaping (MaterialRecord) -> Void,
          onQuickLook: @escaping (MaterialRecord) -> Void, onReveal: @escaping (MaterialRecord) -> Void,
-         onFavorite: @escaping (MaterialRecord) -> Void, onRemove: @escaping (Set<UUID>) -> Void) {
+         onFavorite: @escaping (MaterialRecord) -> Void, onRemove: @escaping (Set<UUID>) -> Void,
+         editing: Bool = false, dragData: @escaping (Set<UUID>) -> Data? = { _ in nil },
+         onReorder: ((Set<UUID>, UUID?) -> Void)? = nil,
+         onGroup: ((Set<UUID>) -> Void)? = nil, onExport: ((Set<UUID>) -> Void)? = nil) {
         self.items = items; _selection = selection; self.theme = theme
         self.courseName = courseName; self.courseColor = courseColor; self.resolveURL = resolveURL
         self.onOpen = onOpen; self.onQuickLook = onQuickLook; self.onReveal = onReveal
         self.onFavorite = onFavorite; self.onRemove = onRemove
+        self.editing = editing; self.dragData = dragData; self.onReorder = onReorder
+        self.onGroup = onGroup; self.onExport = onExport
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -55,10 +66,11 @@ struct MaterialListView: NSViewRepresentable {
         table.allowsColumnSelection = false
         table.allowsColumnReordering = false
         table.allowsColumnResizing = true
-        table.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
+        table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         table.setAccessibilityLabel("资料列表")
 
         let columns: [(String, String, CGFloat)] = [
+            ("selection", "选择", 36),
             ("name", "名称", 314), ("category", "类别", 80),
             ("size", "大小", 75), ("date", "添加日期", 95), ("favorite", "收藏", 36)
         ]
@@ -78,6 +90,7 @@ struct MaterialListView: NSViewRepresentable {
         table.doubleAction = #selector(Coordinator.openDoubleClickedRow(_:))
         table.setDraggingSourceOperationMask(.copy, forLocal: false)
         table.setDraggingSourceOperationMask(.copy, forLocal: true)
+        table.registerForDraggedTypes([NSPasteboard.PasteboardType(UTType.teachshelfMaterial.identifier)])
         table.keyboardAction = { [weak coordinator = context.coordinator] event in
             coordinator?.handleKey(event) ?? false
         }
@@ -97,8 +110,22 @@ struct MaterialListView: NSViewRepresentable {
         scroll.appearance = NSAppearance(named: theme.isDark ? .darkAqua : .aqua)
         guard let table = coordinator.table else { return }
         coordinator.synchronizing = true
+        table.editingSelection = editing
+        table.tableColumn(withIdentifier: NSUserInterfaceItemIdentifier("selection"))?.isHidden = !editing
+        table.setDraggingSourceOperationMask(onReorder == nil ? .copy : [.copy, .move], forLocal: true)
         if !coordinator.hasLoaded || previousItems != items {
-            table.reloadData()
+            let oldIDs = previousItems.map(\.id), newIDs = items.map(\.id)
+            if coordinator.hasLoaded, !reduceMotion, oldIDs != newIDs, Set(oldIDs) == Set(newIDs) {
+                var order = oldIDs
+                table.beginUpdates()
+                for (index, id) in newIDs.enumerated() {
+                    if let previous = order.firstIndex(of: id), previous != index {
+                        table.moveRow(at: previous, to: index)
+                        order.remove(at: previous); order.insert(id, at: index)
+                    }
+                }
+                table.endUpdates()
+            } else { table.reloadData() }
             coordinator.hasLoaded = true
         }
         coordinator.synchronizeSelection()
@@ -145,6 +172,8 @@ struct MaterialListView: NSViewRepresentable {
             guard parent.items.indices.contains(row), let identifier = tableColumn?.identifier else { return nil }
             let view: NSView
             switch identifier.rawValue {
+            case "selection":
+                view = tableView.makeView(withIdentifier: identifier, owner: self) as? MaterialSelectionCell ?? MaterialSelectionCell(frame: .zero)
             case "name":
                 view = tableView.makeView(withIdentifier: identifier, owner: self) as? MaterialNameCell
                     ?? MaterialNameCell(frame: .zero)
@@ -178,6 +207,7 @@ struct MaterialListView: NSViewRepresentable {
                 synchronizeSelection()
                 synchronizing = false
             }
+            refreshVisibleRows()
         }
 
         func synchronizeSelection() {
@@ -204,7 +234,15 @@ struct MaterialListView: NSViewRepresentable {
         }
 
         private func configure(_ view: NSView, material: MaterialRecord, column: String) {
-            if let cell = view as? MaterialNameCell {
+            if let cell = view as? MaterialSelectionCell {
+                cell.configure(material: material, selected: parent.selection.contains(material.id)) { [weak self] in
+                    guard let self else { return }
+                    var ids = self.parent.selection
+                    if !ids.insert(material.id).inserted { ids.remove(material.id) }
+                    self.parent.selection = ids
+                    self.synchronizing = true; self.synchronizeSelection(); self.refreshVisibleRows(); self.synchronizing = false
+                }
+            } else if let cell = view as? MaterialNameCell {
                 cell.configure(material: material, course: parent.courseName(material.courseID),
                                color: parent.courseColor(material.courseID), theme: parent.theme)
             } else if let cell = view as? MaterialCategoryCell {
@@ -230,6 +268,7 @@ struct MaterialListView: NSViewRepresentable {
         }
 
         @objc func openDoubleClickedRow(_ sender: NSTableView) {
+            guard !parent.editing else { return }
             let row = sender.clickedRow
             guard parent.items.indices.contains(row) else { return }
             let material = parent.items[row]
@@ -268,6 +307,11 @@ struct MaterialListView: NSViewRepresentable {
                 menu.addItem(item)
             }
             menu.addItem(.separator())
+            for (title, tag, enabled) in [("移入文件夹…", 5, parent.onGroup != nil), ("导出为 ZIP…", 6, parent.onExport != nil)] where enabled {
+                let item = NSMenuItem(title: title, action: #selector(runMenuAction(_:)), keyEquivalent: "")
+                item.target = self; item.tag = tag; item.representedObject = MaterialMenuCommand(id: material.id, ids: selected)
+                menu.addItem(item)
+            }
             let remove = NSMenuItem(title: "移除 \(selected.count) 份记录…", action: #selector(runMenuAction(_:)), keyEquivalent: "")
             remove.target = self; remove.tag = 4
             remove.representedObject = MaterialMenuCommand(id: material.id, ids: selected)
@@ -284,13 +328,40 @@ struct MaterialListView: NSViewRepresentable {
             case 2: parent.onReveal(material)
             case 3: parent.onFavorite(material)
             case 4: parent.onRemove(command.ids)
+            case 5: parent.onGroup?(command.ids)
+            case 6: parent.onExport?(command.ids)
             default: break
             }
         }
 
         func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
-            guard parent.items.indices.contains(row), let url = parent.resolveURL(parent.items[row]) else { return nil }
-            return url as NSURL
+            guard parent.items.indices.contains(row) else { return nil }
+            let item = NSPasteboardItem()
+            if let url = parent.resolveURL(parent.items[row]) { item.setString(url.absoluteString, forType: .fileURL) }
+            if let data = parent.dragData([parent.items[row].id]) { item.setData(data, forType: NSPasteboard.PasteboardType(UTType.teachshelfMaterial.identifier)) }
+            return item
+        }
+
+        func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo, proposedRow row: Int, proposedDropOperation operation: NSTableView.DropOperation) -> NSDragOperation {
+            guard parent.onReorder != nil, let source = info.draggingSource as? NSTableView, source === tableView else { return [] }
+            tableView.setDropRow(row, dropOperation: .above)
+            return .move
+        }
+
+        func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int, dropOperation: NSTableView.DropOperation) -> Bool {
+            guard let reorder = parent.onReorder, let source = info.draggingSource as? NSTableView, source === tableView else { return false }
+            let type = NSPasteboard.PasteboardType(UTType.teachshelfMaterial.identifier)
+            let ids = Set((info.draggingPasteboard.pasteboardItems ?? []).flatMap { item -> [UUID] in
+                guard let data = item.data(forType: type), let payload = try? JSONDecoder().decode(MaterialDragPayload.self, from: data) else { return [] }
+                return payload.ids
+            })
+            guard !ids.isEmpty else { return false }
+            reorder(ids, parent.items.indices.contains(row) ? parent.items[row].id : nil)
+            return true
+        }
+
+        func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession, willBeginAt screenPoint: NSPoint, forRowIndexes rowIndexes: IndexSet) {
+            (tableView as? MaterialNativeTable)?.dragStarted = true
         }
     }
 }
@@ -302,11 +373,33 @@ private final class MaterialMenuCommand: NSObject {
 }
 
 private final class MaterialNativeTable: NSTableView {
+    var editingSelection = false
+    var dragStarted = false
     var keyboardAction: ((NSEvent) -> Bool)?
     var contextMenu: ((Int) -> NSMenu?)?
 
     override func keyDown(with event: NSEvent) {
         if keyboardAction?(event) != true { super.keyDown(with: event) }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil), index = row(at: convert(event.locationInWindow, from: nil))
+        if editingSelection, index >= 0, event.modifierFlags.intersection([.command, .shift, .control, .option]).isEmpty {
+            var hit = hitTest(point)
+            while let view = hit, view !== self {
+                if view is NSButton { super.mouseDown(with: event); return }
+                hit = view.superview
+            }
+            let previous = selectedRowIndexes
+            dragStarted = false
+            super.mouseDown(with: event)
+            guard !dragStarted else { return }
+            var next = previous
+            if next.contains(index) { next.remove(index) } else { next.insert(index) }
+            selectRowIndexes(next, byExtendingSelection: false)
+            return
+        }
+        super.mouseDown(with: event)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -535,6 +628,22 @@ private final class MaterialInfoCell: NSTableCellView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}
+
+private final class MaterialSelectionCell: NSTableCellView {
+    private let button = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    private var action: (() -> Void)?
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        button.target = self; button.action = #selector(toggle)
+        button.translatesAutoresizingMaskIntoConstraints = false; addSubview(button)
+        NSLayoutConstraint.activate([button.centerXAnchor.constraint(equalTo: centerXAnchor), button.centerYAnchor.constraint(equalTo: centerYAnchor)])
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    func configure(material: MaterialRecord, selected: Bool, action: @escaping () -> Void) {
+        button.state = selected ? .on : .off; button.setAccessibilityLabel("选择：\(material.title)"); self.action = action
+    }
+    @objc private func toggle() { action?() }
 }
 
 private final class MaterialFavoriteCell: NSTableCellView {

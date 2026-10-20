@@ -11,12 +11,17 @@ struct LibraryWorkspace: View {
     @ViewState private var dropTarget = false
     @ViewState private var showInspector = true
     @ViewState private var showingCoursePlans = false
+    @ViewState private var folderRequest: MaterialFolderRequest?
+    @ViewState private var reorderTargetID: UUID?
     private var items: [MaterialRecord] { store.visibleMaterials }
-    private var inspectorVisible: Bool { showInspector && store.selectedMaterial != nil }
+    private var inspectorVisible: Bool { showInspector && !store.materialEditing && store.selectedMaterialIDs.count == 1 }
+    private var hasMaterialFilters: Bool { !store.search.isEmpty || store.categoryFilter != "全部类别" || store.formatFilter != "全部格式" }
 
     var body: some View {
         VStack(spacing: 0) {
             commandBar
+            if store.currentCourseID != nil { folderNavigation }
+            if store.materialEditing { editingBar }
             if let courseID = store.currentCourseID {
                 let tasks = store.state.tasks.filter { $0.courseID == courseID && $0.completionRequired && !$0.isArchived && !$0.isCompleted && $0.cancelledAt == nil }
                 if !tasks.isEmpty {
@@ -34,10 +39,10 @@ struct LibraryWorkspace: View {
                     Group {
                         if items.isEmpty {
                             VStack(spacing: 0) {
-                                EmptyStateView(symbol: store.state.materials.isEmpty ? "books.vertical" : "magnifyingglass", title: store.state.materials.isEmpty ? "让知识住进你的书架" : "没有匹配的资料", detail: store.state.materials.isEmpty ? "导入课件、教材和笔记，或将文件拖到这里。所有资料都留在本机。" : "尝试其他关键词，或清除类别与格式筛选。")
-                                Button(store.state.materials.isEmpty ? "导入第一份资料" : "清除筛选") {
-                                    if store.state.materials.isEmpty { store.chooseImport() }
-                                    else { store.search = ""; store.categoryFilter = "全部类别"; store.formatFilter = "全部格式" }
+                                EmptyStateView(symbol: hasMaterialFilters ? "magnifyingglass" : "folder", title: hasMaterialFilters ? "没有匹配的资料" : (store.materialFolderID != nil ? "文件夹里还没有资料" : "这里还没有资料"), detail: hasMaterialFilters ? "尝试其他关键词，或清除类别与格式筛选。" : "导入资料，或将文件拖到这里；也可打开上方文件夹查看。")
+                                Button(hasMaterialFilters ? "清除筛选" : "导入资料") {
+                                    if hasMaterialFilters { store.search = ""; store.categoryFilter = "全部类别"; store.formatFilter = "全部格式" }
+                                    else { store.chooseImport() }
                                 }.appPrimaryButton().padding(.bottom, 100)
                             }
                         } else if presentation == "covers" { coverGrid }
@@ -67,7 +72,10 @@ struct LibraryWorkspace: View {
                 }.padding(8).allowsHitTesting(false)
             }
         }
-        .onDrop(of: [.fileURL], isTargeted: $dropTarget) { providers in
+        .onDrop(of: [.teachshelfMaterial, .fileURL], isTargeted: $dropTarget) { providers in
+            if providers.contains(where: { $0.hasItemConformingToTypeIdentifier(UTType.teachshelfMaterial.identifier) }) {
+                return store.acceptMaterialDrop(providers)
+            }
             FileDropLoader.load(providers) { urls in store.importURLs = urls; store.showingImport = !urls.isEmpty }
             return true
         }
@@ -75,6 +83,7 @@ struct LibraryWorkspace: View {
         .sheet(isPresented: $showingCoursePlans) {
             PlanListSheet(courseID: store.currentCourseID, pendingOnly: true)
         }
+        .sheet(item: $folderRequest) { request in MaterialFolderSheet(ids: request.ids, parentID: request.parentID).environmentObject(store) }
     }
 
     private var subtitle: String {
@@ -86,6 +95,10 @@ struct LibraryWorkspace: View {
 
     private var commandBar: some View {
         WorkspaceCommandBar(title: store.title, subtitle: subtitle, countLabel: "\(items.count) 份") {
+            Button(store.materialEditing ? "完成" : "编辑") {
+                guard store.beforeLeavingMaterial?() != false else { return }
+                store.materialEditing.toggle()
+            }.buttonStyle(.bordered).accessibilityLabel(store.materialEditing ? "完成资料编辑" : "编辑资料")
             if let id = store.currentCourseID, let course = store.state.courses.first(where: { $0.id == id }) {
                 Button { store.courseToEdit = course; store.showingCourseEditor = true } label: { Image(systemName: "ellipsis.circle") }.buttonStyle(.borderless).help("编辑课程")
             }
@@ -111,9 +124,16 @@ struct LibraryWorkspace: View {
                 ChoiceMenu("类别", selection: $store.categoryFilter, selectedTitle: store.categoryFilter) {
                     Text("全部类别").tag("全部类别"); ForEach(store.categories, id: \.self) { Text($0).tag($0) }
                 }.frame(width: 120)
-                ChoiceMenu("排序", selection: $store.sort, selectedTitle: store.sort) {
-                    ForEach(["最近添加", "名称", "最近打开", "文件大小"], id: \.self) { Text($0).tag($0) }
-                }.frame(width: 110)
+                if let courseID = store.currentCourseID {
+                    SolidChoiceMenu("资料排序", selection: Binding(get: { store.materialSortMode }, set: { mode in
+                        store.perform { try store.repository.setMaterialSort(mode, courseID: courseID) }
+                    }), options: MaterialSortMode.allCases.map { ChoiceOption(value: $0, title: $0.title) })
+                        .frame(width: 128).help(store.canReorderMaterials ? "拖曳资料调整顺序，自动保存" : (store.materialSortMode == .name ? "名称按自然顺序排列" : "时间按导入时间从新到旧排列"))
+                } else {
+                    ChoiceMenu("排序", selection: $store.sort, selectedTitle: store.sort) {
+                        ForEach(["最近添加", "名称", "最近打开", "文件大小"], id: \.self) { Text($0).tag($0) }
+                    }.frame(width: 110)
+                }
             }
         }
     }
@@ -127,7 +147,11 @@ struct LibraryWorkspace: View {
                          onOpen: { store.openMaterial($0) },
                          onQuickLook: { QuickLookController.shared.show(try? store.repository.resolveURL($0)) },
                          onReveal: { if let url = try? store.repository.resolveURL($0) { store.revealURL(url) } },
-                         onFavorite: { store.favorite($0) }, onRemove: { store.removeMaterials($0) })
+                         onFavorite: { store.favorite($0) }, onRemove: { store.removeMaterials($0) },
+                         editing: store.materialEditing, dragData: { store.materialDragData($0) },
+                         onReorder: store.canReorderMaterials ? { ids, target in store.reorderMaterials(ids, before: target) } : nil,
+                         onGroup: store.currentCourseID != nil ? { ids in organize(ids) } : nil,
+                         onExport: { store.exportMaterials($0) })
     }
 
     private var coverGrid: some View {
@@ -138,13 +162,25 @@ struct LibraryWorkspace: View {
                                       courseName: store.courseName(material.courseID), courseColor: store.courseColor(material.courseID),
                                       selected: store.selectedMaterialIDs.contains(material.id))
                         .contentShape(Rectangle())
-                        .onTapGesture(count: 2) { store.openMaterial(material) }
-                        .onTapGesture { store.selectMaterials([material.id]) }
-                        .accessibilityAction { store.selectMaterials([material.id]) }
-                        .contextMenu { materialMenu(material, ids: [material.id]) }
-                        .onDrag { NSItemProvider(contentsOf: (try? store.repository.resolveURL(material)) ?? URL(fileURLWithPath: material.sourcePath)) ?? NSItemProvider() }
+                        .overlay(alignment: .topLeading) {
+                            if store.materialEditing {
+                                Toggle("选择：\(material.title)", isOn: Binding(get: { store.selectedMaterialIDs.contains(material.id) }, set: { _ in selectCover(material.id, extending: true) }))
+                                    .toggleStyle(.checkbox).labelsHidden().padding(8)
+                            }
+                        }
+                        .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(reorderTargetID == material.id ? theme.ink : .clear, lineWidth: 2).allowsHitTesting(false) }
+                        .onTapGesture(count: 2) { if !store.materialEditing { store.openMaterial(material) } }
+                        .onTapGesture { selectCover(material.id, extending: store.materialEditing || NSEvent.modifierFlags.contains(.command)) }
+                        .accessibilityAction { selectCover(material.id, extending: store.materialEditing) }
+                        .contextMenu { materialMenu(material, ids: store.selectedMaterialIDs.contains(material.id) ? store.selectedVisibleMaterialIDs : [material.id]) }
+                        .onDrag { store.materialProvider(material) }
+                        .onDrop(of: [.teachshelfMaterial], isTargeted: Binding(get: { reorderTargetID == material.id }, set: { targeted in
+                            if targeted && store.canReorderMaterials { reorderTargetID = material.id }
+                            else if reorderTargetID == material.id { reorderTargetID = nil }
+                        })) { providers in store.acceptMaterialDrop(providers, before: material.id) }
                 }
             }.padding(24)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: items.map(\.id))
         }.background(Color(nsColor: .underPageBackgroundColor).opacity(0.35))
             .focusable().focusEffectDisabled()
             .onKeyPress(.space) {
@@ -158,7 +194,77 @@ struct LibraryWorkspace: View {
         Button("在 Finder 中显示") { if let url = try? store.repository.resolveURL(material) { store.revealURL(url) } }
         Button(material.isFavorite ? "取消收藏" : "收藏") { store.favorite(material) }
         Divider()
-        Button("移除 \(ids.count) 份记录…") { store.removeMaterials(ids) }
+        if store.currentCourseID != nil { Button("移入文件夹…") { organize(ids) } }
+        Button("导出为 ZIP…") { store.exportMaterials(ids) }
+        Button("删除 \(ids.count) 份资料…", role: .destructive) { store.removeMaterials(ids) }
+    }
+
+    private func selectCover(_ id: UUID, extending: Bool) {
+        var ids = extending ? store.selectedMaterialIDs : []
+        if !ids.insert(id).inserted { ids.remove(id) }
+        store.selectMaterials(ids)
+    }
+
+    private func organize(_ ids: Set<UUID>) {
+        guard store.beforeLeavingMaterial?() != false else { return }
+        folderRequest = MaterialFolderRequest(ids: ids, parentID: store.materialFolderID)
+    }
+
+    private var editingBar: some View {
+        HStack(spacing: 12) {
+            Text("已选择 \(store.selectedVisibleMaterialIDs.count) 份").font(.callout.weight(.medium))
+            Button("全选") { store.selectMaterials(Set(items.map(\.id))) }
+            Button("取消选择") { store.selectMaterials([]) }.disabled(store.selectedVisibleMaterialIDs.isEmpty)
+            Spacer(minLength: 4)
+            Button { organize(store.selectedVisibleMaterialIDs) } label: { Label("移入文件夹", systemImage: "folder.badge.plus") }
+                .disabled(store.currentCourseID == nil || store.selectedVisibleMaterialIDs.isEmpty)
+            Button { store.exportMaterials(store.selectedVisibleMaterialIDs) } label: { Label("导出 ZIP", systemImage: "square.and.arrow.up") }
+                .disabled(store.selectedVisibleMaterialIDs.isEmpty)
+            Button(role: .destructive) { store.removeMaterials(store.selectedVisibleMaterialIDs) } label: { Label("删除", systemImage: "trash") }
+                .disabled(store.selectedVisibleMaterialIDs.isEmpty)
+        }.controlSize(.small).padding(.horizontal, 24).padding(.vertical, 10).background(theme.selection)
+    }
+
+    private var folderNavigation: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Button("课程资料") { store.openMaterialFolder(nil) }.buttonStyle(.plain)
+                    .onDrop(of: [.teachshelfMaterial], isTargeted: nil) { store.acceptMaterialDrop($0, into: nil, grouping: true) }
+                ForEach(MaterialOrdering.folderPath(store.materialFolderID, in: store.state.materialFolders)) { folder in
+                    Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(.tertiary)
+                    Button(folder.name) { store.openMaterialFolder(folder.id) }.buttonStyle(.plain).lineLimit(1)
+                        .onDrop(of: [.teachshelfMaterial], isTargeted: nil) { store.acceptMaterialDrop($0, into: folder.id, grouping: true) }
+                }
+                Spacer()
+                if store.canReorderMaterials { Text("拖曳调整顺序").foregroundStyle(.secondary).font(.caption) }
+                Button { organize([]) } label: { Label("新建文件夹", systemImage: "folder.badge.plus") }.buttonStyle(.plain)
+            }.font(.callout)
+            if !store.currentMaterialFolders.isEmpty {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 10)], spacing: 8) {
+                        ForEach(store.currentMaterialFolders) { folder in folderTile(folder) }
+                    }
+                }.frame(height: min(CGFloat((store.currentMaterialFolders.count + 3) / 4) * 50, 150))
+            }
+        }.padding(.horizontal, 24).padding(.top, 2).padding(.bottom, 12)
+    }
+
+    private func folderTile(_ folder: MaterialFolder) -> some View {
+        Button { store.openMaterialFolder(folder.id) } label: {
+            HStack(spacing: 9) {
+                Image(systemName: "folder.fill").font(.system(size: 20)).foregroundStyle(theme.ink)
+                Text(folder.name).lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
+            }.padding(.horizontal, 12).frame(height: 42)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityLabel("打开文件夹：\(folder.name)")
+            .contextMenu {
+                Button("重命名…") { store.renameMaterialFolder(folder) }
+                Button("解散文件夹…") { store.dissolveMaterialFolder(folder) }
+            }
+            .onDrop(of: [.teachshelfMaterial], isTargeted: nil) { store.acceptMaterialDrop($0, into: folder.id, grouping: true) }
     }
 }
 
