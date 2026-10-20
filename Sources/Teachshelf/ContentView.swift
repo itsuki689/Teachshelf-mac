@@ -35,8 +35,9 @@ struct ContentView: View {
                     .frame(width: detailGeometry.size.width, height: detailGeometry.size.height)
                 }
                 .workspaceWindowTitle(store.title)
+                // A space preserves native placeholder metrics without displaying a prompt.
                 .searchable(text: $store.workspaceSearchQuery, isPresented: $store.showingWorkspaceSearch,
-                            placement: .toolbarPrincipal, prompt: Text(""))
+                            placement: .toolbarPrincipal, prompt: Text(verbatim: " "))
                 .searchSuggestions {
                     ForEach(WorkspaceSearch.results(for: store.workspaceSearchQuery, in: store.state)) { result in
                         Button("\(result.kind.rawValue) · \(result.title)", systemImage: result.kind.symbol) {
