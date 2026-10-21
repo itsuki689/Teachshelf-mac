@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct WorkspaceToolbarActions: View {
     @EnvironmentObject private var store: AppStore
@@ -6,12 +7,34 @@ struct WorkspaceToolbarActions: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.controlActiveState) private var activeState
 
+    private let diameter: CGFloat = 36
+
+    // Native Menu labels normalize SF Symbol metrics and flatten custom SwiftUI drawing.
+    // Supply a vector image at its intended size, with explicit appearance variants.
+    private static let lightPlusImage = makePlusImage(color: NSColor(white: 0.15, alpha: 1))
+    private static let darkPlusImage = makePlusImage(color: NSColor(white: 0.9, alpha: 1))
+
+    private static func makePlusImage(color: NSColor) -> NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: rect.minX + 2, y: rect.midY))
+            path.line(to: NSPoint(x: rect.maxX - 2, y: rect.midY))
+            path.move(to: NSPoint(x: rect.midX, y: rect.minY + 2))
+            path.line(to: NSPoint(x: rect.midX, y: rect.maxY - 2))
+            path.lineWidth = 2.2; path.lineCapStyle = .round
+            color.setStroke(); path.stroke()
+            return true
+        }
+        return image
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             Button { store.chooseImport() } label: {
                 Label("导入资料", systemImage: "square.and.arrow.down")
-                    .frame(width: 32, height: 32).contentShape(Rectangle())
+                    .frame(width: diameter, height: diameter).contentShape(Circle())
             }
+            .frame(width: diameter, height: diameter)
             .help("导入文件或文件夹 · ⌘O")
             .accessibilityIdentifier("workspace.import")
             Menu {
@@ -21,16 +44,19 @@ struct WorkspaceToolbarActions: View {
                 }
                 Button("新建计划…", systemImage: "calendar.badge.plus") { store.startToolbarPlan() }
             } label: {
-                Label("快捷新建", systemImage: "plus")
-                    .frame(width: 32, height: 32).contentShape(Rectangle())
+                Image(nsImage: colorScheme == .dark ? Self.darkPlusImage : Self.lightPlusImage)
+                    .renderingMode(.original)
+                    .frame(width: diameter, height: diameter).contentShape(Circle())
             }
+            .frame(width: diameter, height: diameter)
             .menuIndicator(.hidden).tint(Color.primary)
             .help("新建课程或计划")
             .accessibilityLabel("快捷新建")
             .accessibilityIdentifier("workspace.create")
         }
         .labelStyle(.iconOnly).buttonStyle(.plain).font(.system(size: 16))
-        .padding(.horizontal, 3).frame(height: 34).fixedSize()
+        // Two tangent circles: each action occupies one diameter of the capsule.
+        .frame(width: diameter * 2, height: diameter).fixedSize()
         .overlay {
             // Keep the toolbar's native glass; only reinforce its edge on light backdrops.
             if colorScheme == .light {
