@@ -102,6 +102,12 @@ struct LibraryWorkspace: View {
                 store.materialEditing.toggle()
             }.buttonStyle(.bordered).frame(width: 54).accessibilityLabel(store.materialEditing ? "完成资料编辑" : "编辑资料")
             if let id = store.currentCourseID, let course = store.state.courses.first(where: { $0.id == id }) {
+                let connection = store.state.teachingConnections.first { $0.courseID == id }
+                Button {
+                    guard store.beforeLeavingMaterial?() != false else { return }
+                    store.teachingConnectionToOpen = connection?.id; store.showingTeachingWebsite = true
+                } label: { Label(connection == nil ? "连接教学网站" : "网站更新", systemImage: connection == nil ? "globe" : "arrow.clockwise") }
+                    .buttonStyle(.bordered).help(connection == nil ? "连接课件、作业与实验" : "检查网站课件和作业的更新")
                 Button { store.courseToEdit = course; store.showingCourseEditor = true } label: { Image(systemName: "ellipsis.circle") }.buttonStyle(.borderless).help("编辑课程")
             }
             Picker("视图", selection: $presentation) {

@@ -49,6 +49,18 @@ private struct PlanUndo {
     @Published var importURLs: [URL] = []
     @Published var courseToEdit: Course?
     @Published var showingCourseEditor = false
+    @Published var showingTeachingWebsite = false
+    @Published var teachingConnectionToOpen: UUID?
+    private var teachingSession: TeachingWebsiteController?
+    private var teachingSessionRoot: URL?
+
+    func teachingWebsiteSession() -> TeachingWebsiteController {
+        if let teachingSession, teachingSessionRoot == repository.root { return teachingSession }
+        teachingSession?.close()
+        let value = TeachingWebsiteController(root: repository.root)
+        teachingSession = value; teachingSessionRoot = repository.root
+        return value
+    }
     @Published var showingWorkspaceSearch = false
     @Published var workspaceSearchQuery = ""
     @Published var toolbarPlanDraft: ToolbarPlanDraft?

@@ -63,6 +63,11 @@ struct WorkspaceToolbarActions: View {
                     store.courseToEdit = nil; store.showingCourseEditor = true
                 }
                 Button("新建计划…", systemImage: "calendar.badge.plus") { store.startToolbarPlan() }
+                Divider()
+                Button("连接教学网站…", systemImage: "globe") {
+                    guard store.beforeLeavingMaterial?() != false else { return }
+                    store.teachingConnectionToOpen = nil; store.showingTeachingWebsite = true
+                }
             } label: {
                 Image(nsImage: colorScheme == .dark ? Self.darkPlusImage : Self.lightPlusImage)
                     .renderingMode(.original)

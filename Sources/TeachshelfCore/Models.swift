@@ -139,6 +139,7 @@ public struct LibraryState: Codable, Hashable, Sendable {
     public var courses: [Course] = []
     public var materials: [MaterialRecord] = []
     public var materialFolders: [MaterialFolder] = []
+    public var teachingConnections: [TeachingConnection] = []
     public var tasks: [StudyTask] = []
     public var timetableTerms: [TimetableTerm] = []
     public var customCategories: [String] = []
@@ -148,7 +149,7 @@ public struct LibraryState: Codable, Hashable, Sendable {
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, courses, materials, materialFolders, tasks, timetableTerms, customCategories, accentColor, appearance, showCourseBorders
+        case schemaVersion, courses, materials, materialFolders, teachingConnections, tasks, timetableTerms, customCategories, accentColor, appearance, showCourseBorders
     }
 
     public init(from decoder: Decoder) throws {
@@ -157,6 +158,7 @@ public struct LibraryState: Codable, Hashable, Sendable {
         courses = try values.decode([Course].self, forKey: .courses)
         materials = try values.decode([MaterialRecord].self, forKey: .materials)
         materialFolders = try values.decodeIfPresent([MaterialFolder].self, forKey: .materialFolders) ?? []
+        teachingConnections = try values.decodeIfPresent([TeachingConnection].self, forKey: .teachingConnections) ?? []
         tasks = try values.decode([StudyTask].self, forKey: .tasks)
         timetableTerms = values.contains(.timetableTerms) ? try values.decode([TimetableTerm].self, forKey: .timetableTerms) : []
         customCategories = try values.decode([String].self, forKey: .customCategories)

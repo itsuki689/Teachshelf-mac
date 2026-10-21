@@ -71,6 +71,9 @@ struct ContentView: View {
         .disabled(store.isBusy)
         .sheet(isPresented: $store.showingCourseEditor) { CourseEditor(course: store.courseToEdit).environmentObject(store) }
         .sheet(isPresented: $store.showingImport) { ImportSheet(urls: store.importURLs).environmentObject(store) }
+        .sheet(isPresented: $store.showingTeachingWebsite) {
+            TeachingWebsiteSheet(controller: store.teachingWebsiteSession(), initialCourseID: store.currentCourseID, connectionID: store.teachingConnectionToOpen).environmentObject(store)
+        }
         .sheet(item: $store.toolbarPlanDraft) { draft in
             TaskEditor(task: draft.task, isNew: draft.isNew, compact: true, calendar: PlanCalendar.calendar)
                 .environmentObject(store)

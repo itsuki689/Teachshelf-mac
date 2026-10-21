@@ -177,7 +177,7 @@ final class TimetableTests {
 
     @Test func futureAndInvalidSchemaVersionsAreRejectedWithoutRewriting() throws {
         let root = try folder(), index = root.appendingPathComponent("library.json")
-        for version in [0, 7, Int.max] {
+        for version in [0, 8, Int.max] {
             var state = LibraryState(); state.schemaVersion = version
             let bytes = try JSONEncoder().encode(state)
             try bytes.write(to: index)

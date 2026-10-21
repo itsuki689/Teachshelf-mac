@@ -37,6 +37,7 @@ if [[ -d "$PROJECT_DIR/Resources/Timetable" ]]; then
     cp -R "$PROJECT_DIR/Resources/Timetable" "$STAGED_APP/Contents/Resources/Timetable"
 fi
 cp "$PROJECT_DIR/README.md" "$STAGED_APP/Contents/Resources/README.md"
+cp -R "$PROJECT_DIR/Resources/TeachingWebsite" "$STAGED_APP/Contents/Resources/TeachingWebsite"
 chmod +x "$STAGED_APP/Contents/MacOS/Teachshelf"
 /usr/bin/plutil -lint "$STAGED_APP/Contents/Info.plist"
 /usr/bin/codesign --force --deep --sign - "$STAGED_APP"
