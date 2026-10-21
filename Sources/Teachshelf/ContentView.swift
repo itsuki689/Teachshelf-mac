@@ -59,22 +59,7 @@ struct ContentView: View {
                             .disabled(!store.canGoForward || store.isBusy).help("前进 · ⌘]")
                             .accessibilityIdentifier("workspace.forward")
                     }
-                    ToolbarItemGroup(placement: .primaryAction) {
-                        Button { store.chooseImport() } label: { Label("导入资料", systemImage: "square.and.arrow.down") }
-                            .labelStyle(.iconOnly).disabled(store.isBusy).help("导入文件或文件夹 · ⌘O")
-                            .accessibilityIdentifier("workspace.import")
-                        Menu {
-                            Button("新建课程…", systemImage: "books.vertical") {
-                                guard store.beforeLeavingMaterial?() != false else { return }
-                                store.courseToEdit = nil; store.showingCourseEditor = true
-                            }
-                            Button("新建计划…", systemImage: "calendar.badge.plus") { store.startToolbarPlan() }
-                        } label: { Label("快捷新建", systemImage: "plus") }
-                            .labelStyle(.iconOnly).menuIndicator(.hidden).tint(Color.primary)
-                            .disabled(store.isBusy).help("新建课程或计划")
-                            .accessibilityLabel("快捷新建")
-                            .accessibilityIdentifier("workspace.create")
-                    }
+                    ToolbarItem(placement: .primaryAction) { WorkspaceToolbarActions() }
                 }
             }
             .navigationSplitViewStyle(.balanced)
