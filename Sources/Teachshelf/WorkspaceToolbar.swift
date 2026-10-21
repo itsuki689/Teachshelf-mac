@@ -1,6 +1,26 @@
 import SwiftUI
 import AppKit
 
+struct WorkspaceAppearanceToolbarItem: ToolbarContent {
+    @ToolbarContentBuilder var body: some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            item.sharedBackgroundVisibility(.hidden)
+        } else {
+            item
+        }
+    }
+
+    private var item: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            HStack(spacing: 0) {
+                AppearanceModeToggle(width: 72)
+                    .accessibilityIdentifier("workspace.appearance")
+            }
+            .frame(width: 72, height: 36).fixedSize()
+        }
+    }
+}
+
 struct WorkspaceToolbarActions: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.colorScheme) private var colorScheme

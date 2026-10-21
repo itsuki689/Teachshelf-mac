@@ -59,6 +59,7 @@ struct ContentView: View {
                             .disabled(!store.canGoForward || store.isBusy).help("前进 · ⌘]")
                             .accessibilityIdentifier("workspace.forward")
                     }
+                    WorkspaceAppearanceToolbarItem()
                     ToolbarItem(placement: .primaryAction) { WorkspaceToolbarActions() }
                 }
             }

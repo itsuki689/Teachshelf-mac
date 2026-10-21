@@ -12,10 +12,6 @@ struct AppearanceSettingsControl: View {
         }
     }
 
-    private var darkBinding: Binding<Bool> {
-        Binding(get: { effectiveDark }, set: { save($0 ? "dark" : "light") })
-    }
-
     var body: some View {
         HStack(spacing: 24) {
             VStack(alignment: .leading, spacing: 8) {
@@ -26,16 +22,40 @@ struct AppearanceSettingsControl: View {
                 )).toggleStyle(.checkbox).font(.callout).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            DayNightToggle(isDark: darkBinding)
-                .contextMenu {
-                    appearanceChoice("跟随系统", value: "system")
-                    Divider()
-                    appearanceChoice("浅色", value: "light")
-                    appearanceChoice("深色", value: "dark")
-                }
+            AppearanceModeToggle()
         }
         .padding(.vertical, 4)
         .disabled(store.isBusy)
+    }
+
+    private func save(_ value: String) {
+        store.perform { try store.repository.saveAppearance(value) }
+    }
+}
+
+/// The same appearance preference and animated control, sized for its presentation.
+struct AppearanceModeToggle: View {
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.colorScheme) private var colorScheme
+    var width: CGFloat = 100
+
+    private var effectiveDark: Bool {
+        switch store.state.appearance {
+        case "dark": return true
+        case "light": return false
+        default: return colorScheme == .dark
+        }
+    }
+
+    var body: some View {
+        DayNightToggle(isDark: Binding(get: { effectiveDark }, set: { save($0 ? "dark" : "light") }), width: width)
+            .contextMenu {
+                appearanceChoice("跟随系统", value: "system")
+                Divider()
+                appearanceChoice("浅色", value: "light")
+                appearanceChoice("深色", value: "dark")
+            }
+            .disabled(store.isBusy)
     }
 
     private func appearanceChoice(_ title: String, value: String) -> some View {
