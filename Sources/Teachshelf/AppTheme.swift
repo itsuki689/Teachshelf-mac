@@ -60,16 +60,10 @@ private struct AppAppearanceModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onAppear { apply(store.state.appearance) }
-            .onChange(of: store.state.appearance) { _, mode in apply(mode) }
-    }
-
-    private func apply(_ mode: String) {
-        switch mode {
-        case "light": NSApp.appearance = NSAppearance(named: .aqua)
-        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
-        default: NSApp.appearance = nil
-        }
+            .onAppear { AppearanceTransition.shared.apply(store.state.appearance, animated: false) }
+            .onChange(of: store.state.appearance) { _, mode in
+                AppearanceTransition.shared.apply(mode, animated: true)
+            }
     }
 }
 
