@@ -6,7 +6,7 @@ import TeachshelfCore
 
 @Suite(.serialized)
 @MainActor struct AppearanceTransitionTests {
-    @Test func nativeWorkspaceCaptureKeepsItsFrameAndToolbar() throws {
+    @Test func nativeWorkspaceOverlayKeepsItsFrameAndToolbar() throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("appearance-workspace-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -21,21 +21,27 @@ import TeachshelfCore
         host.layoutSubtreeIfNeeded()
         let root = try #require(host.superview), frame = window.frame
         let toolbar = window.toolbar
-        let transition = AppearanceTransition()
+        var now: TimeInterval = 0
+        var changed = false
+        let transition = AppearanceTransition(duration: 1, clock: { now })
         defer { transition.finish() }
         let started = ProcessInfo.processInfo.systemUptime
-        transition.transition(in: [window]) { window.appearance = NSAppearance(named: .aqua) }
-        print("Native workspace appearance capture: \(ProcessInfo.processInfo.systemUptime - started) seconds")
+        transition.transition(in: [window]) { changed = true; window.appearance = NSAppearance(named: .aqua) }
+        print("Native workspace appearance overlay setup: \(ProcessInfo.processInfo.systemUptime - started) seconds")
         #expect(overlays(in: root).count == 1)
         #expect(overlays(in: root).first?.frame == root.bounds)
-        #expect(overlays(in: root).first?.liveRects.isEmpty == false)
-        transition.finish()
+        #expect(!changed)
+        now = 0.4; transition.advance()
+        #expect(changed)
+        #expect(overlays(in: root).count == 1)
+        now = 0.5; transition.advance()
+        now = 1.01; transition.advance()
         #expect(overlays(in: root).isEmpty)
         #expect(window.frame == frame)
         #expect(window.toolbar === toolbar)
     }
 
-    @Test func wholeWindowPassesThroughGrayWithoutTakingFocusOrClicks() throws {
+    @Test func grayBandsCoverFromTheTopAndRevealFromTheBottomWithoutTakingFocusOrClicks() throws {
         let (window, content, root) = makeWindow()
         defer { window.close() }
         let field = NSTextField(string: "未保存的输入")
@@ -44,166 +50,279 @@ import TeachshelfCore
         window.makeFirstResponder(field)
         let responder = window.firstResponder, frame = window.frame
         var now: TimeInterval = 0
+        var changes = 0
         let transition = AppearanceTransition(duration: 1, clock: { now })
         defer { transition.finish() }
-
-        transition.transition(in: [window]) { content.color = .black }
-        let overlay = try #require(root.subviews.compactMap { $0 as? AppearanceTransition.SnapshotView }.first)
+        transition.transition(in: [window]) { changes += 1; content.color = .black }
+        let overlay = try #require(overlays(in: root).first)
         #expect(overlay.hitTest(NSPoint(x: 40, y: 40)) == nil)
         #expect(!overlay.acceptsFirstResponder)
-        #expect(window.firstResponder === responder)
-        #expect(try centerColor(of: root).redComponent > 0.9)
+        #expect(changes == 0)
+        #expect(try sample(content, in: root, at: 0.5).redComponent > 0.9)
 
+        now = 0.2; transition.advance()
+        #expect(changes == 0)
+        #expect(try isGray(sample(content, in: root, at: 0.88)))
+        #expect(try sample(content, in: root, at: 0.12).redComponent > 0.9)
+
+        now = 0.4; transition.advance()
+        #expect(changes == 1)
+        for fraction in [0.12, 0.5, 0.88] {
+            #expect(try isGray(sample(content, in: root, at: fraction)))
+        }
         now = 0.5; transition.advance()
-        let gray = try centerColor(of: root)
-        #expect(gray.redComponent > 0.15 && gray.redComponent < 0.9)
-        #expect(abs(gray.redComponent - gray.greenComponent) < 0.03)
-        #expect(abs(gray.redComponent - gray.blueComponent) < 0.03)
+        #expect(changes == 1)
+        #expect(try isGray(sample(content, in: root, at: 0.88)))
 
-        now = 1.1; transition.advance()
+        now = 0.75; transition.advance()
+        #expect(try isGray(sample(content, in: root, at: 0.88)))
+        #expect(try sample(content, in: root, at: 0.12).redComponent < 0.1)
+
+        now = 1.01; transition.advance()
         #expect(overlays(in: root).isEmpty)
-        #expect(try centerColor(of: root).redComponent < 0.1)
+        #expect(changes == 1)
+        #expect(try sample(content, in: root, at: 0.5).redComponent < 0.1)
         #expect(window.frame == frame)
         #expect(field.stringValue == "未保存的输入")
         #expect(window.firstResponder === responder)
     }
 
-    @Test func reversingMidFadeStartsFromTheVisibleGrayAndLeavesNoOverlay() throws {
+    @Test func aNewTargetDuringCoverReplacesThePendingChangeWithoutRestartingTheCover() throws {
         let (window, content, root) = makeWindow()
         defer { window.close() }
         var now: TimeInterval = 0
+        var applied: [String] = []
         let transition = AppearanceTransition(duration: 1, clock: { now })
         defer { transition.finish() }
-        transition.transition(in: [window]) { content.color = .black }
+        transition.transition(in: [window]) { applied.append("superseded"); content.color = .black }
+        now = 0.2; transition.advance()
+        let before = try sample(content, in: root, at: 0.88).redComponent
+        transition.transition(in: [window]) { applied.append("latest"); content.color = .black }
+        #expect(overlays(in: root).count == 1)
+        #expect(applied.isEmpty)
+        #expect(abs(try sample(content, in: root, at: 0.88).redComponent - before) < 0.03)
+        now = 0.4; transition.advance()
+        #expect(applied == ["latest"])
+        #expect(try isGray(sample(content, in: root, at: 0.12)))
         now = 0.5; transition.advance()
-        let before = try centerColor(of: root).redComponent
-
-        transition.transition(in: [window]) { content.color = .white }
-        #expect(overlays(in: root).count == 1)
-        #expect(abs(try centerColor(of: root).redComponent - before) < 0.03)
-        now += 0.5; transition.advance()
-        #expect(try centerColor(of: root).redComponent > before)
-        transition.finish()
-        now += 2; transition.advance()
+        now = 1.01; transition.advance()
         #expect(overlays(in: root).isEmpty)
-        #expect(try centerColor(of: root).redComponent > 0.9)
+        #expect(applied == ["latest"])
     }
 
-    @Test func resizingCancelsTheSnapshotAndMissingWindowsStillApplyTheChange() throws {
+    @Test func aNewTargetWhileCoveredAppliesUnderTheGrayAndRestartsTheHold() throws {
         let (window, content, root) = makeWindow()
         defer { window.close() }
-        let transition = AppearanceTransition()
-        defer { transition.finish() }
-        transition.transition(in: [window]) { content.color = .black }
-        #expect(overlays(in: root).count == 1)
-        window.setContentSize(NSSize(width: 400, height: 260))
-        transition.advance()
-        #expect(overlays(in: root).isEmpty)
-        var changed = false
-        transition.transition(in: []) { changed = true }
-        #expect(changed)
-    }
-
-    @Test func liveControlChangesImmediatelyWhileItsWindowStillBlends() throws {
-        let (window, content, root) = makeWindow()
-        defer { window.close() }
-        let marker = AppearanceLiveRegion.MarkerView(frame: NSRect(x: 130, y: 140, width: 60, height: 30))
-        content.addSubview(marker)
-        let liveRect = root.convert(marker.bounds, from: marker)
-        let livePoint = NSPoint(x: liveRect.midX, y: liveRect.midY)
-        let mirroredPoint = NSPoint(x: livePoint.x, y: root.bounds.maxY - livePoint.y)
-        let outsidePoint = NSPoint(x: 30, y: livePoint.y)
         var now: TimeInterval = 0
+        var applied: [String] = []
         let transition = AppearanceTransition(duration: 1, clock: { now })
         defer { transition.finish() }
-        transition.transition(in: [window]) { content.color = .black }
-        let overlay = try #require(overlays(in: root).first)
-        #expect(overlay.liveRects == [liveRect.insetBy(dx: -2, dy: -2)])
-        #expect(try color(at: livePoint, in: root).redComponent < 0.1)
-        #expect(try color(at: outsidePoint, in: root).redComponent > 0.9)
-        #expect(try color(at: mirroredPoint, in: root).redComponent > 0.9)
-        now = 0.5; transition.advance()
-        #expect(try color(at: livePoint, in: root).redComponent < 0.1)
-        let gray = try color(at: outsidePoint, in: root)
-        #expect(gray.redComponent > 0.15 && gray.redComponent < 0.9)
+        transition.transition(in: [window]) { applied.append("dark"); content.color = .black }
+        now = 0.4; transition.advance()
+        now = 0.46
+        transition.transition(in: [window]) { applied.append("light"); content.color = .white }
+        #expect(applied == ["dark", "light"])
+        #expect(overlays(in: root).count == 1)
+        now = 0.54; transition.advance()
+        #expect(try isGray(sample(content, in: root, at: 0.12)))
+        #expect(try isGray(sample(content, in: root, at: 0.88)))
+        now = 0.57; transition.advance()
+        now = 1.1; transition.advance()
+        #expect(overlays(in: root).isEmpty)
+        #expect(applied == ["dark", "light"])
+        #expect(try sample(content, in: root, at: 0.5).redComponent > 0.9)
     }
 
-    @Test func liveRegionsBelongOnlyToTheirOwnWindow() throws {
+    @Test func theOpaqueHoldStartsAfterTheAppearanceChangeHasFinishedDrawing() throws {
+        let (window, content, root) = makeWindow()
+        defer { window.close() }
+        var now: TimeInterval = 0
+        var changes = 0
+        let transition = AppearanceTransition(duration: 1, clock: { now })
+        defer { transition.finish() }
+        transition.transition(in: [window]) {
+            changes += 1; content.color = .black
+            // Model synchronous native/SwiftUI work while the gray cover is opaque.
+            now = 0.7
+        }
+        now = 0.4; transition.advance()
+        #expect(changes == 1)
+        let coveredBottom = try sample(content, in: root, at: 0.02).redComponent
+        #expect(coveredBottom > 0.3 && coveredBottom < 0.7)
+        now = 0.75; transition.advance()
+        #expect(abs(try sample(content, in: root, at: 0.02).redComponent - coveredBottom) < 0.01)
+        #expect(try isGray(sample(content, in: root, at: 0.88)))
+        now = 0.81; transition.advance()
+        #expect(try sample(content, in: root, at: 0.02).redComponent < coveredBottom - 0.02)
+        #expect(try isGray(sample(content, in: root, at: 0.88)))
+        now = 1.31; transition.advance()
+        #expect(overlays(in: root).isEmpty)
+        #expect(changes == 1)
+        #expect(try sample(content, in: root, at: 0.5).redComponent < 0.1)
+    }
+
+    @Test func aWindowJoiningDuringRecoverageKeepsEveryBandInSyncOnTheNextFrame() throws {
         let (first, firstContent, firstRoot) = makeWindow()
         let (second, secondContent, secondRoot) = makeWindow()
         defer { first.close(); second.close() }
-        firstContent.addSubview(AppearanceLiveRegion.MarkerView(frame: NSRect(x: 130, y: 70, width: 60, height: 60)))
-        secondContent.addSubview(AppearanceLiveRegion.MarkerView(frame: NSRect(x: 10, y: 70, width: 60, height: 60)))
-        let transition = AppearanceTransition()
-        defer { transition.finish() }
-        transition.transition(in: [first, second]) { firstContent.color = .black; secondContent.color = .black }
-        #expect(overlays(in: firstRoot).first?.liveRects.count == 1)
-        #expect(overlays(in: secondRoot).first?.liveRects.count == 1)
-        #expect(try color(at: NSPoint(x: firstRoot.bounds.midX, y: firstRoot.bounds.midY), in: firstRoot).redComponent < 0.1)
-        #expect(try color(at: NSPoint(x: 40, y: firstRoot.bounds.midY), in: firstRoot).redComponent > 0.9)
-        #expect(try color(at: NSPoint(x: secondRoot.bounds.midX, y: secondRoot.bounds.midY), in: secondRoot).redComponent > 0.9)
-        #expect(try color(at: NSPoint(x: 40, y: secondRoot.bounds.midY), in: secondRoot).redComponent < 0.1)
-    }
-
-    @Test func movedHiddenAndRemovedMarkersDoNotLeaveStaleHoles() throws {
-        let (window, content, root) = makeWindow()
-        defer { window.close() }
-        var marker: AppearanceLiveRegion.MarkerView? = AppearanceLiveRegion.MarkerView(frame: NSRect(x: 130, y: 70, width: 60, height: 60))
-        content.addSubview(marker!)
+        secondContent.color = .black
         var now: TimeInterval = 0
         let transition = AppearanceTransition(duration: 1, clock: { now })
         defer { transition.finish() }
-        transition.transition(in: [window]) { content.color = .black }
-        let overlay = try #require(overlays(in: root).first)
-        #expect(overlay.liveRects.count == 1)
-        marker?.setFrameOrigin(NSPoint(x: 10, y: 70))
-        now = 0.05; transition.advance()
-        #expect(try color(at: NSPoint(x: root.bounds.midX, y: root.bounds.midY), in: root).redComponent > 0.9)
-        #expect(try color(at: NSPoint(x: 40, y: root.bounds.midY), in: root).redComponent < 0.1)
-        marker?.isHidden = true; transition.advance()
-        #expect(overlay.liveRects.isEmpty)
-        marker?.isHidden = false; transition.advance()
-        #expect(overlay.liveRects.count == 1)
-        marker?.removeFromSuperview(); marker = nil
-        transition.advance()
-        #expect(overlay.liveRects.isEmpty)
-        #expect(try color(at: NSPoint(x: 40, y: root.bounds.midY), in: root).redComponent > 0.9)
-    }
-
-    @Test func liveRegionRegistryDoesNotRetainMarkers() {
-        weak var weakMarker: AppearanceLiveRegion.MarkerView?
-        autoreleasepool {
-            let marker = AppearanceLiveRegion.MarkerView(frame: NSRect(x: 0, y: 0, width: 60, height: 30))
-            weakMarker = marker
+        transition.transition(in: [first]) { firstContent.color = .black }
+        now = 0.4; transition.advance()
+        now = 0.5; transition.advance()
+        now = 0.75; transition.advance()
+        transition.transition(in: [first]) { firstContent.color = .black }
+        now = 0.95; transition.advance()
+        transition.transition(in: [first, second]) { firstContent.color = .black; secondContent.color = .black }
+        let firstOverlay = try #require(overlays(in: firstRoot).first)
+        let secondOverlay = try #require(overlays(in: secondRoot).first)
+        let nextFrames: [TimeInterval?] = [nil, 0.96, 1.0]
+        for instant in nextFrames {
+            if let instant { now = instant; transition.advance() }
+            // Matching only the current image is insufficient: the next frame
+            // must also retain the original partially visible covering baseline.
+            #expect(firstOverlay.opacities == secondOverlay.opacities)
+            let firstBands = try bandColors(in: firstRoot)
+            let secondBands = try bandColors(in: secondRoot)
+            for (firstColor, secondColor) in zip(firstBands, secondBands) {
+                #expect(abs(firstColor.redComponent - secondColor.redComponent) < 0.004)
+                #expect(abs(firstColor.greenComponent - secondColor.greenComponent) < 0.004)
+                #expect(abs(firstColor.blueComponent - secondColor.blueComponent) < 0.004)
+            }
         }
-        #expect(weakMarker == nil)
     }
 
-    private func makeWindow() -> (NSWindow, ColorView, NSView) {
+    @Test func reversingDuringRevealStartsFromTheVisibleBandsAndChangesOnlyAfterCoveringAgain() throws {
+        let (window, content, root) = makeWindow()
+        defer { window.close() }
+        var now: TimeInterval = 0
+        var applied: [String] = []
+        let transition = AppearanceTransition(duration: 1, clock: { now })
+        defer { transition.finish() }
+        transition.transition(in: [window]) { applied.append("dark"); content.color = .black }
+        now = 0.4; transition.advance()
+        now = 0.5; transition.advance()
+        now = 0.75; transition.advance()
+        let before = try [0.12, 0.5, 0.88].map { try sample(content, in: root, at: $0).redComponent }
+        transition.transition(in: [window]) { applied.append("light"); content.color = .white }
+        #expect(applied == ["dark"])
+        #expect(overlays(in: root).count == 1)
+        for (index, fraction) in [0.12, 0.5, 0.88].enumerated() {
+            #expect(abs(try sample(content, in: root, at: fraction).redComponent - before[index]) < 0.03)
+        }
+        now = 1.16; transition.advance()
+        #expect(applied == ["dark", "light"])
+        for fraction in [0.12, 0.5, 0.88] {
+            #expect(try isGray(sample(content, in: root, at: fraction)))
+        }
+        now = 1.27; transition.advance()
+        now = 1.78; transition.advance()
+        #expect(overlays(in: root).isEmpty)
+        #expect(try sample(content, in: root, at: 0.5).redComponent > 0.9)
+        #expect(applied == ["dark", "light"])
+    }
+
+    @Test func windowsShareTheSameCoverAndRevealAndResizeKeepsEveryEdgeCovered() throws {
+        let (first, firstContent, firstRoot) = makeWindow()
+        let (second, secondContent, secondRoot) = makeWindow(size: NSSize(width: 440, height: 280))
+        defer { first.close(); second.close() }
+        var now: TimeInterval = 0
+        var changes = 0
+        let transition = AppearanceTransition(duration: 1, clock: { now })
+        defer { transition.finish() }
+        transition.transition(in: [first, second]) {
+            changes += 1; firstContent.color = .black; secondContent.color = .black
+        }
+        now = 0.2; transition.advance()
+        for (content, root) in [(firstContent, firstRoot), (secondContent, secondRoot)] {
+            #expect(overlays(in: root).count == 1)
+            #expect(try isGray(sample(content, in: root, at: 0.88)))
+            #expect(try sample(content, in: root, at: 0.12).redComponent > 0.9)
+        }
+        first.setContentSize(NSSize(width: 480, height: 320))
+        first.contentView?.layoutSubtreeIfNeeded()
+        now = 0.3; transition.advance()
+        #expect(overlays(in: firstRoot).first?.frame == firstRoot.bounds)
+        #expect(changes == 0)
+        now = 0.4; transition.advance()
+        #expect(changes == 1)
+        for (content, root) in [(firstContent, firstRoot), (secondContent, secondRoot)] {
+            #expect(try isGray(sample(content, in: root, at: 0.12)))
+            #expect(try isGray(sample(content, in: root, at: 0.88)))
+        }
+        now = 0.5; transition.advance()
+        now = 0.75; transition.advance()
+        for (content, root) in [(firstContent, firstRoot), (secondContent, secondRoot)] {
+            #expect(try isGray(sample(content, in: root, at: 0.88)))
+            #expect(try sample(content, in: root, at: 0.12).redComponent < 0.1)
+        }
+        now = 1.01; transition.advance()
+        #expect(overlays(in: firstRoot).isEmpty)
+        #expect(overlays(in: secondRoot).isEmpty)
+        #expect(changes == 1)
+    }
+
+    @Test func finishingOrLosingAllRootsStillAppliesTheLastRequestExactlyOnce() throws {
+        let (window, _, root) = makeWindow()
+        defer { window.close() }
+        let transition = AppearanceTransition(duration: 1)
+        var applied: [String] = []
+        transition.transition(in: [window]) { applied.append("superseded") }
+        transition.transition(in: [window]) { applied.append("latest") }
+        transition.finish(); transition.finish(); transition.advance()
+        #expect(applied == ["latest"])
+        #expect(overlays(in: root).isEmpty)
+
+        transition.transition(in: [window]) { applied.append("missing-root") }
+        window.contentView = nil
+        transition.advance()
+        #expect(applied == ["latest", "missing-root"])
+        #expect(overlays(in: root).isEmpty)
+        transition.transition(in: []) { applied.append("no-windows") }
+        #expect(applied == ["latest", "missing-root", "no-windows"])
+        transition.finish()
+        #expect(applied == ["latest", "missing-root", "no-windows"])
+    }
+
+    private func makeWindow(size: NSSize = NSSize(width: 320, height: 200)) -> (NSWindow, ColorView, NSView) {
         _ = NSApplication.shared
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 200),
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                               styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        let content = ColorView(frame: NSRect(x: 0, y: 0, width: 320, height: 200))
+        let content = ColorView(frame: NSRect(origin: .zero, size: size))
         window.contentView = content
         window.contentView?.layoutSubtreeIfNeeded()
         return (window, content, content.superview ?? content)
     }
 
-    private func overlays(in view: NSView) -> [AppearanceTransition.SnapshotView] {
-        view.subviews.compactMap { $0 as? AppearanceTransition.SnapshotView }
+    private func overlays(in view: NSView) -> [AppearanceTransition.BlockOverlay] {
+        view.subviews.compactMap { $0 as? AppearanceTransition.BlockOverlay }
     }
 
-    private func centerColor(of view: NSView) throws -> NSColor {
-        try color(at: NSPoint(x: view.bounds.midX, y: view.bounds.midY), in: view)
-    }
-
-    private func color(at point: NSPoint, in view: NSView) throws -> NSColor {
-        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        view.cacheDisplay(in: view.bounds, to: bitmap)
-        let x = Int((point.x - view.bounds.minX) / view.bounds.width * CGFloat(bitmap.pixelsWide))
-        let y = Int((view.bounds.maxY - point.y) / view.bounds.height * CGFloat(bitmap.pixelsHigh))
+    private func sample(_ content: NSView, in root: NSView, at fraction: CGFloat) throws -> NSColor {
+        let point = root.convert(NSPoint(x: content.bounds.midX, y: content.bounds.height * fraction), from: content)
+        let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+        root.cacheDisplay(in: root.bounds, to: bitmap)
+        let x = Int((point.x - root.bounds.minX) / root.bounds.width * CGFloat(bitmap.pixelsWide))
+        let y = Int((root.bounds.maxY - point.y) / root.bounds.height * CGFloat(bitmap.pixelsHigh))
         return try #require(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+    }
+
+    private func bandColors(in root: NSView) throws -> [NSColor] {
+        let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+        root.cacheDisplay(in: root.bounds, to: bitmap)
+        return try (0..<10).map { index in
+            let y = Int((CGFloat(index) + 0.5) / 10 * CGFloat(bitmap.pixelsHigh))
+            return try #require(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: y)?.usingColorSpace(.sRGB))
+        }
+    }
+
+    private func isGray(_ color: NSColor) -> Bool {
+        color.redComponent > 0.3 && color.redComponent < 0.7
+            && abs(color.redComponent - color.greenComponent) < 0.03
+            && abs(color.redComponent - color.blueComponent) < 0.03
     }
 
     private final class ColorView: NSView {

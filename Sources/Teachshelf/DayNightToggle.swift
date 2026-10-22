@@ -36,7 +36,6 @@ struct DayNightToggle: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .background(AppearanceLiveRegion())
         .onAppear { startedAt = Date(); isVisible = true }
         .onDisappear { isVisible = false }
         .help(isDark ? "切换到浅色模式" : "切换到深色模式")
