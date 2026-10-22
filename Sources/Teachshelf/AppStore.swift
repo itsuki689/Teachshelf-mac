@@ -48,6 +48,7 @@ private struct PlanUndo {
     @Published var errorMessage: String?
     @Published var showingImport = false
     @Published var importURLs: [URL] = []
+    private var importPanel: NSOpenPanel?
     @Published var courseToEdit: Course?
     @Published var showingCourseEditor = false
     @Published var showingTeachingWebsite = false
@@ -346,11 +347,31 @@ private struct PlanUndo {
         do { status = try await Task.detached(priority: .userInitiated, operation: operation).value; reload() }
         catch { report(error) }
     }
-    func chooseImport() {
+    @discardableResult func chooseImport() -> Bool {
+        guard !isBusy, importPanel == nil, !showingImport else { return false }
+        let parent = NSApp.keyWindow ?? NSApp.mainWindow
+        guard parent?.attachedSheet == nil, parent?.sheetParent == nil,
+              beforeLeavingMaterial?() != false else { return false }
         let panel = NSOpenPanel()
         panel.canChooseFiles = true; panel.canChooseDirectories = true; panel.allowsMultipleSelection = true
         panel.message = "选择资料文件或文件夹"
-        if panel.runModal() == .OK { importURLs = panel.urls; showingImport = true }
+        importPanel = panel
+        let sourceRepository = repository
+        let completion: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self, self.importPanel === panel else { return }
+            guard response == .OK else { self.importPanel = nil; return }
+            let urls = panel.urls
+            Task { @MainActor [weak self] in
+                await Task.yield()
+                guard let self, self.importPanel === panel else { return }
+                self.importPanel = nil
+                guard self.repository === sourceRepository, !self.isBusy, !self.showingImport else { return }
+                self.importURLs = urls; self.showingImport = true
+            }
+        }
+        if let parent { panel.beginSheetModal(for: parent, completionHandler: completion) }
+        else { panel.begin(completionHandler: completion) }
+        return true
     }
     func importMaterials(urls: [URL], courseID: UUID?, category: String, copy: Bool) async {
         let repo = repository
@@ -394,6 +415,9 @@ private struct PlanUndo {
 
     func changeLibrary(to target: URL, migrate: Bool) async {
         guard !isBusy else { return }
+        let previousImportPanel = importPanel
+        importPanel = nil
+        previousImportPanel?.cancel(nil)
         isBusy = true; status = migrate ? "正在迁移资料库…" : "正在打开资料库…"
         defer { isBusy = false }
         await flushAppearance()

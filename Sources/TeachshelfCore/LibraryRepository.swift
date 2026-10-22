@@ -836,6 +836,11 @@ public final class LibraryRepository: @unchecked Sendable {
         try commit { $0.appearanceTransition = value }
     }
 
+    public func saveToolbarSettings(_ value: ToolbarSettings) throws {
+        guard value.isValid else { throw LibraryError.invalidInput("顶栏最多放置 6 个不重复的快捷操作。") }
+        try commit { $0.toolbarSettings = value }
+    }
+
     public func saveAccentColor(_ value: String) throws {
         guard let color = RGBColor(hex: value) else { throw LibraryError.invalidInput("请输入六位 HEX 颜色，例如 #39786B。") }
         try commit { $0.accentColor = color.hex }
@@ -854,6 +859,7 @@ public final class LibraryRepository: @unchecked Sendable {
         try Self.validateMaterialOrganization(state)
         guard ["system", "light", "dark"].contains(state.appearance) else { throw LibraryError.invalidInput("未知的外观设置。") }
         guard state.appearanceTransition.isValid else { throw LibraryError.invalidInput("资料库包含无效的明暗过渡设置。") }
+        guard state.toolbarSettings.isValid else { throw LibraryError.invalidInput("资料库包含无效的顶栏设置。") }
         guard ColorPalette.isStoredColor(state.accentColor) else { throw LibraryError.invalidInput("资料库包含无效的强调色。") }
         guard Set(state.courses.map(\.id)).count == state.courses.count,
               Set(state.materials.map(\.id)).count == state.materials.count,

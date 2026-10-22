@@ -146,11 +146,12 @@ public struct LibraryState: Codable, Hashable, Sendable {
     public var accentColor: String = ColorPalette.defaultAccent
     public var appearance: String = "system"
     public var appearanceTransition: AppearanceTransitionSettings = .default
+    public var toolbarSettings: ToolbarSettings = .default
     public var showCourseBorders: Bool = true
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, courses, materials, materialFolders, teachingConnections, tasks, timetableTerms, customCategories, accentColor, appearance, appearanceTransition, showCourseBorders
+        case schemaVersion, courses, materials, materialFolders, teachingConnections, tasks, timetableTerms, customCategories, accentColor, appearance, appearanceTransition, toolbarSettings, showCourseBorders
     }
 
     public init(from decoder: Decoder) throws {
@@ -167,6 +168,8 @@ public struct LibraryState: Codable, Hashable, Sendable {
         appearance = try values.decode(String.self, forKey: .appearance)
         appearanceTransition = values.contains(.appearanceTransition)
             ? try values.decode(AppearanceTransitionSettings.self, forKey: .appearanceTransition) : .default
+        toolbarSettings = values.contains(.toolbarSettings)
+            ? try values.decode(ToolbarSettings.self, forKey: .toolbarSettings) : .default
         showCourseBorders = values.contains(.showCourseBorders) ? try values.decode(Bool.self, forKey: .showCourseBorders) : true
     }
 }

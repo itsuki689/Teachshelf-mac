@@ -4,11 +4,12 @@ import UniformTypeIdentifiers
 import TeachshelfCore
 
 private enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, library, backup, about
+    case appearance, toolbar, library, backup, about
     var id: Self { self }
     var title: String {
         switch self {
         case .appearance: return "外观"
+        case .toolbar: return "顶栏"
         case .library: return "资料库"
         case .backup: return "备份"
         case .about: return "关于"
@@ -17,6 +18,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .appearance: return "显示模式、明暗过渡与个性配色"
+        case .toolbar: return "选择常用操作，调整胶囊顺序与数量"
         case .library: return "查看资料库位置，或切换到其他资料库"
         case .backup: return "导出完整备份，或从已有备份恢复"
         case .about: return "课屿版本与文件管理说明"
@@ -115,7 +117,7 @@ struct SettingsWorkspace: View {
     @ViewState private var accentSession: AccentEditingSession?
 
     private var section: SettingsSection { SettingsSection(rawValue: selectedSection) ?? .appearance }
-    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.8.14" }
+    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.9.0" }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -139,6 +141,7 @@ struct SettingsWorkspace: View {
                 VStack(alignment: .leading, spacing: 18) {
                     switch section {
                     case .appearance: appearancePage
+                    case .toolbar: toolbarPage
                     case .library: libraryPage
                     case .backup: backupPage
                     case .about: aboutPage
@@ -183,6 +186,12 @@ struct SettingsWorkspace: View {
             Text("课程颜色在课程中单独调整，不随强调色改变。")
                 .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
         }
+    }
+
+    private var toolbarPage: some View {
+        SettingsPanel {
+            ToolbarSettingsControl()
+        }.disabled(store.isBusy)
     }
 
     private var libraryPage: some View {

@@ -47,6 +47,9 @@ import TeachshelfCore
         _ = try repository.importUndergraduateTimetable(UndergraduateSchedule(name: "2026 秋季", courses: [
             UndergraduateCourse(name: "线性代数与矩阵计算", classroom: "教学楼 201", teacher: "", weeks: Array(1...18), weekday: 1, startSection: 3, timeCount: 1)
         ]))
+        try repository.saveToolbarSettings(ToolbarSettings(actions: [
+            .update, .settings, .importMaterials, .create, .schedule, .pendingTasks
+        ]))
         let store = AppStore(repository: repository, remembersLocation: false)
         let host = NSHostingView(rootView: ContentView().appTheme().environmentObject(store))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1020, height: 680), styleMask: [.titled, .resizable], backing: .buffered, defer: false)

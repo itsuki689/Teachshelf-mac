@@ -60,7 +60,9 @@ struct ContentView: View {
                             .accessibilityIdentifier("workspace.forward")
                     }
                     WorkspaceAppearanceToolbarItem()
-                    ToolbarItem(placement: .primaryAction) { WorkspaceToolbarActions() }
+                    if !store.state.toolbarSettings.actions.isEmpty {
+                        ToolbarItem(placement: .primaryAction) { WorkspaceToolbarActions() }
+                    }
                 }
             }
             .navigationSplitViewStyle(.balanced)
