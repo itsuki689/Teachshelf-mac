@@ -153,6 +153,15 @@ import TeachshelfCore
             let viewport = scroll.convert(scroll.bounds, to: host)
             let columns = table.tableColumns.indices.map { table.rect(ofColumn: $0) }
             let position = scroll.contentView.bounds.origin
+            let materialID = try #require(store.visibleMaterials.first?.id)
+            for selection: Set<UUID> in [[materialID], [], [materialID], []] {
+                store.selectMaterials(selection); settle()
+                #expect(try #require(findMaterialTable(in: host)) === table)
+                #expect(scroll.convert(scroll.bounds, to: host) == viewport)
+                #expect(table.tableColumns.indices.map { table.rect(ofColumn: $0) } == columns)
+                #expect(scroll.contentView.bounds.origin == position)
+                #expect(window.contentView?.bounds.size == size)
+            }
             for editing in [true, false, true, false] {
                 store.materialEditing = editing; settle()
                 #expect(try #require(findMaterialTable(in: host)) === table)

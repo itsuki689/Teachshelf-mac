@@ -49,20 +49,24 @@ struct LibraryWorkspace: View {
                         } else if presentation == "covers" { coverGrid }
                         else { materialTable }
                     }.frame(width: geometry.size.width, height: geometry.size.height)
-                    if inspectorVisible, let material = store.selectedMaterial {
-                        VStack(spacing: 0) {
+                    // Animate only the drawer, on a fixed canvas at the right edge.
+                    // The material table keeps its viewport and scroll position.
+                    ZStack(alignment: .trailing) {
+                        if inspectorVisible, let material = store.selectedMaterial {
                             MaterialInspector(material: material).id(material.id)
+                                .frame(width: min(320, geometry.size.width * 0.44), height: geometry.size.height)
+                                .background(Color(nsColor: .windowBackgroundColor))
+                                .overlay(alignment: .leading) { Rectangle().fill(.quaternary).frame(width: 1) }
+                                .shadow(color: .black.opacity(theme.isDark ? 0.22 : 0.08), radius: 12, x: -4, y: 0)
+                                .transition(.offset(x: min(320, geometry.size.width * 0.44)))
                         }
-                        .frame(width: min(320, geometry.size.width * 0.44), height: geometry.size.height)
-                        .background(Color(nsColor: .windowBackgroundColor))
-                        .overlay(alignment: .leading) { Rectangle().fill(.quaternary).frame(width: 1) }
-                        .shadow(color: .black.opacity(theme.isDark ? 0.22 : 0.08), radius: 12, x: -4, y: 0)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
+                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .trailing)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: inspectorVisible)
+                    .zIndex(1)
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
                 .clipped()
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: inspectorVisible)
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
