@@ -56,6 +56,59 @@ struct TeachingWebsiteTests {
         #expect(repo.state.teachingConnections.isEmpty)
     }
 
+    @Test func connectingTheSameCourseReusesItsBindingWithoutChangingImportedData() throws {
+        let (repo, connection, root) = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        let (file, url) = try sample(root)
+        _ = try repo.syncTeachingFile(connectionID: connection.id, activity: activity(), file: file, downloadedURL: url)
+        _ = try repo.syncTeachingAssignment(connectionID: connection.id, activity: activity(), page: page(), now: date("2026-10-21"))
+        var options = connection; options.includeHistory = true; options.includeExperiments = false
+        try repo.saveTeachingConnection(options)
+        try repo.finishTeachingUpdate(connection.id, messages: [TeachingSyncMessage("已有更新记录")], completed: true)
+        let before = repo.state, index = repo.root.appendingPathComponent("library.json")
+        let indexBytes = try Data(contentsOf: index)
+        let original = try #require(before.teachingConnections.first)
+        let request = TeachingConnection(courseID: connection.courseID, remoteCourseID: "411", remoteTitle: "重新读取的网站标题", accountID: "123")
+        let reused = try repo.connectTeachingCourse(request)
+        #expect(reused == original && reused.id != request.id)
+        #expect(!reused.items.isEmpty && !reused.folders.isEmpty && reused.lastSyncAt != nil)
+        #expect(repo.state == before)
+        #expect(try Data(contentsOf: index) == indexBytes)
+        let material = try #require(repo.state.materials.first)
+        #expect(try Data(contentsOf: repo.resolveURL(material)) == Data(contentsOf: url))
+    }
+
+    @Test func connectingAnAlreadyBoundSourceToAnotherCourseDoesNotChangeTheIndex() throws {
+        let (repo, connection, root) = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        let other = Course(name: "另一本地课程"); try repo.saveCourse(other)
+        let before = repo.state, index = repo.root.appendingPathComponent("library.json")
+        let indexBytes = try Data(contentsOf: index)
+        let request = TeachingConnection(courseID: other.id, remoteCourseID: connection.remoteCourseID, remoteTitle: connection.remoteTitle, accountID: connection.accountID)
+        do {
+            _ = try repo.connectTeachingCourse(request)
+            Issue.record("已绑定的网站课程不应被改绑。")
+        } catch {
+            #expect(error.localizedDescription.contains("数据库"))
+        }
+        #expect(repo.state == before)
+        #expect(try Data(contentsOf: index) == indexBytes)
+    }
+
+    @Test func connectingNewSourcesSeparatesAccountsAndPreservesTheChosenCourse() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Teachshelf-web-connect-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repo = try LibraryRepository(root: root.appendingPathComponent("library"))
+        let course = Course(name: "数据库", semester: "2026-2027学年 第1学期", teacher: "本地教师", colorHex: "#123456")
+        try repo.saveCourse(course)
+        let first = TeachingConnection(courseID: course.id, remoteCourseID: "411", remoteTitle: "数据库系统概论", accountID: "123")
+        let second = TeachingConnection(courseID: course.id, remoteCourseID: "411", remoteTitle: "数据库系统概论", accountID: "456")
+        #expect(try repo.connectTeachingCourse(first) == first)
+        #expect(try repo.connectTeachingCourse(second) == second)
+        #expect(repo.state.schemaVersion == 7 && repo.state.teachingConnections == [first, second])
+        #expect(repo.state.courses == [course])
+        let reopened = try JSONDecoder().decode(LibraryState.self, from: Data(contentsOf: repo.root.appendingPathComponent("library.json")))
+        #expect(reopened == repo.state)
+    }
+
     @Test func repeatedDownloadsDoNotDuplicateAndVersionsPreserveLocalEditsAndLinks() throws {
         let (repo, connection, root) = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
         let a = activity(), (file, first) = try sample(root)

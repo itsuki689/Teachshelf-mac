@@ -23,6 +23,23 @@ extension LibraryRepository {
         }
     }
 
+    /// Reuses an existing source binding without resetting its options or synchronization history.
+    public func connectTeachingCourse(_ value: TeachingConnection) throws -> TeachingConnection {
+        try withLock {
+            if let existing = snapshot.teachingConnections.first(where: {
+                $0.accountID == value.accountID && $0.remoteCourseID == value.remoteCourseID
+            }) {
+                guard existing.courseID == value.courseID else {
+                    let name = snapshot.courses.first { $0.id == existing.courseID }?.name ?? "其他课程"
+                    throw LibraryError.invalidInput("该网站课程已绑定至「\(name)」，请打开已有连接。")
+                }
+                return existing
+            }
+            try saveTeachingConnection(value)
+            return value
+        }
+    }
+
     public func saveTeachingConnection(_ value: TeachingConnection) throws {
         try commit { state in
             var value = value

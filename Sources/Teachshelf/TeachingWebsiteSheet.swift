@@ -64,7 +64,7 @@ struct TeachingWebsiteSheet: View {
                             }
                         }
                     }
-                    Button { showAllCourses = false; selectedID = nil; controller.preview = nil; controller.showWeb = false; controller.messages = [] } label: {
+                    Button { showAllCourses = false; selectedID = nil; targetCourseID = nil; controller.preview = nil; controller.showWeb = false; controller.messages = [] } label: {
                         Label("连接课程", systemImage: "plus")
                     }.buttonStyle(.bordered)
                 }.padding(16).frame(width: 225).disabled(working || controller.hasReview)
@@ -99,6 +99,14 @@ struct TeachingWebsiteSheet: View {
                     selectedID = showAllCourses ? nil : controller.reviewSources.first?.id
                 }
             }
+            .onChange(of: controller.preview) { _, page in
+                guard let page else { return }
+                if let existing = existingConnection(for: page) { targetCourseID = existing.courseID }
+                else {
+                    let matches = TeachingCourseMatching.suggestions(for: page.title, courses: store.state.courses)
+                    targetCourseID = matches.count == 1 && !matches[0].needsReview ? matches[0].courseID : nil
+                }
+            }
             .confirmationDialog("断开连接？资料、计划和文件会保留。", isPresented: Binding(get: { disconnectID != nil }, set: { if !$0 { disconnectID = nil } })) {
                 Button("断开连接", role: .destructive) {
                     if let id = disconnectID { store.perform { try store.repository.disconnectTeachingWebsite(id) }; selectedID = nil }
@@ -129,7 +137,7 @@ struct TeachingWebsiteSheet: View {
                     controller.openCourse(id)
                 }.disabled(working)
                 Button("读取当前课程") { controller.readCourse() }
-                    .disabled(working || controller.client.webView.url == nil)
+                    .disabled(working)
             }
             if controller.preview != nil {
                 HStack {
@@ -141,8 +149,14 @@ struct TeachingWebsiteSheet: View {
         }
     }
     private func previewView(_ page: TeachingPage) -> some View {
-        VStack(alignment: .leading, spacing: 15) {
+        let existing = existingConnection(for: page)
+        let matches = TeachingCourseMatching.suggestions(for: page.title, courses: store.state.courses)
+        return VStack(alignment: .leading, spacing: 15) {
             Text(page.title).font(.title3.weight(.semibold))
+            if let existing {
+                Label("已连接到 \(store.courseName(existing.courseID))", systemImage: "link")
+                Text("打开已有连接，保留更新记录、资料与计划关联。").font(.caption).foregroundStyle(.secondary)
+            } else {
             HStack {
                 Text("绑定本地课程").font(.callout)
                 SolidChoiceMenu("绑定本地课程", selection: $targetCourseID,
@@ -150,6 +164,16 @@ struct TeachingWebsiteSheet: View {
                         ChoiceOption(value: Optional($0.id), title: [$0.name, $0.semester].filter { !$0.isEmpty }.joined(separator: " · "))
                     })
             }
+            if !matches.isEmpty {
+                HStack(spacing: 8) {
+                    Text(matches.count == 1 && !matches[0].needsReview ? "匹配到现有课程" : "可能对应，请核对").font(.caption).foregroundStyle(.secondary)
+                    ForEach(matches, id: \.courseID) { match in
+                        Button(store.courseName(match.courseID)) { targetCourseID = match.courseID }
+                            .font(.caption).buttonStyle(.bordered)
+                    }
+                }
+            }
+            Text("连接只添加网站来源，保留本地课程的名称、教师、颜色和课表。").font(.caption).foregroundStyle(.secondary)
             HStack {
                 Text("网页时间使用").font(.callout)
                 SolidChoiceMenu("网页时间使用", selection: $timeZone, options: [ChoiceOption(value: "Asia/Shanghai", title: "北京时间（Asia/Shanghai）"), ChoiceOption(value: "UTC", title: "UTC")])
@@ -162,6 +186,7 @@ struct TeachingWebsiteSheet: View {
             Toggle("同时导入已过期或已提交的历史作业", isOn: $includeHistory).toggleStyle(.checkbox)
             Text("作业按固定计划导入；明确的截止时间自动生成 DDL。网站没有执行时段时，不自动安排执行时间。")
                 .font(.caption).foregroundStyle(.secondary)
+            }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(page.activities) { activity in
@@ -176,18 +201,29 @@ struct TeachingWebsiteSheet: View {
             HStack {
                 Text("\(page.activities.count) 个条目 · 文件将归入「教学网站」文件夹").font(.caption).foregroundStyle(.secondary)
                 Spacer()
+                if let existing {
+                    Button("打开已有连接") { openConnection(existing, status: "已打开现有连接，未重复添加课程或资料。") }.appPrimaryButton()
+                } else {
                 Button("确认连接") {
                     guard let targetCourseID else { return }
                     var connection = TeachingConnection(courseID: targetCourseID, remoteCourseID: page.courseID, remoteTitle: page.title, accountID: page.accountID, timeZone: timeZone)
                     connection.includeHistory = includeHistory; connection.includeMaterials = includeMaterials
                     connection.includeAssignments = includeAssignments; connection.includeExperiments = includeExperiments
                     do {
-                        try store.repository.saveTeachingConnection(connection); store.reload(); selectedID = connection.id
-                        controller.preview = nil; controller.showWeb = false; controller.status = "连接已保存，点击「检查更新」生成确认清单。"
+                        let saved = try store.repository.connectTeachingCourse(connection)
+                        store.reload(); openConnection(saved, status: "已连接现有课程，点击「检查更新」生成确认清单。")
                     } catch { controller.status = error.localizedDescription }
                 }.appPrimaryButton().disabled(!store.state.courses.contains { $0.id == targetCourseID && !$0.isArchived } || (!includeMaterials && !includeAssignments && !includeExperiments))
+                }
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+    private func existingConnection(for page: TeachingPage) -> TeachingConnection? {
+        store.state.teachingConnections.first { $0.accountID == page.accountID && $0.remoteCourseID == page.courseID }
+    }
+    private func openConnection(_ connection: TeachingConnection, status: String) {
+        selectedID = connection.id; showAllCourses = false
+        controller.preview = nil; controller.showWeb = false; controller.status = status
     }
     private func connectedHeader(_ connection: TeachingConnection) -> some View {
         VStack(alignment: .leading, spacing: 10) {
