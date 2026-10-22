@@ -23,8 +23,11 @@ struct CourseSidebarRow: View {
     }
 
     private var shouldAnimate: Bool {
-        isVisible && isWindowActive && !reduceMotion && wave.phase != .idle
+        isVisible && isWindowActive && !reduceMotion && wave.phase != .idle && wave.phase != .settled
     }
+
+    private var showsCount: Bool { isHovered || isSelected }
+    private var countWidth: CGFloat { max(40, CGFloat(String(count).count) * 7 + 20) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -44,12 +47,10 @@ struct CourseSidebarRow: View {
                 HStack(spacing: 8) {
                     Text(course.name).lineLimit(1)
                     Spacer(minLength: 4)
-                    Text("\(count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
                 }
                 .fontWeight(isSelected ? .semibold : .regular)
-                .padding(.trailing, 10)
+                // Reserve the panel's space so the title never reflows on hover.
+                .padding(.trailing, countWidth + 8)
                 .frame(maxWidth: .infinity, minHeight: 38, maxHeight: 38)
                 .contentShape(Rectangle())
             }
@@ -68,10 +69,25 @@ struct CourseSidebarRow: View {
                     theme.selection.opacity(0.45)
                 }
                 if !reduceMotion {
-                    pixelBackground
+                    pixelBackground.clipped().padding(.trailing, countWidth)
                 }
             }
             .allowsHitTesting(false)
+        }
+        .overlay(alignment: .trailing) {
+            ZStack(alignment: .leading) {
+                Color(hex: course.colorHex).opacity(theme.isDark ? 0.24 : 0.16)
+                Rectangle().fill(Color(hex: course.colorHex)).frame(width: 2)
+                Text("\(count)")
+                    .font(.caption.monospacedDigit().weight(.medium))
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(width: countWidth, height: 38)
+            .offset(x: showsCount ? 0 : countWidth + 2)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: showsCount)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay {
@@ -98,7 +114,7 @@ struct CourseSidebarRow: View {
         }
         .onAppear {
             isVisible = true
-            wave = CoursePixelTide(phase: isSelected ? .selected : .idle)
+            wave = CoursePixelTide(phase: isSelected ? .settled : .idle)
         }
         .onDisappear {
             isVisible = false
@@ -107,19 +123,20 @@ struct CourseSidebarRow: View {
         }
         .onChange(of: isSelected) { _, selected in
             guard !reduceMotion, isVisible, isWindowActive else {
-                wave = CoursePixelTide(phase: selected ? .selected : .idle)
+                wave = CoursePixelTide(phase: selected ? .settled : .idle)
                 return
             }
             let now = Date()
             wave = selected
                 ? CoursePixelTide(phase: .selecting, startedAt: now,
                                  initialProgress: wave.progress(at: now))
-                : CoursePixelTide(phase: .retracting, startedAt: now, initialProgress: 1)
+                : CoursePixelTide(phase: .retracting, startedAt: now,
+                                  initialProgress: wave.progress(at: now))
         }
         .onChange(of: controlActiveState) { _, _ in settleInactiveWindow() }
         .onChange(of: scenePhase) { _, _ in settleInactiveWindow() }
         .onChange(of: reduceMotion) { _, _ in
-            wave = CoursePixelTide(phase: isSelected ? .selected : .idle)
+            wave = CoursePixelTide(phase: isSelected ? .settled : .idle)
         }
         .task(id: wave) { @MainActor in
             guard let duration = wave.finishAfter else { return }
@@ -127,9 +144,10 @@ struct CourseSidebarRow: View {
             catch { return }
             guard !Task.isCancelled else { return }
             if isSelected {
-                wave = CoursePixelTide(phase: .selected)
+                wave = wave.settled(at: Date())
             } else if isHovered && isWindowActive && !reduceMotion {
-                wave = CoursePixelTide(phase: .hover)
+                // Once a hover front reaches the divider, leave a static mosaic.
+                wave = wave.phase == .hover ? wave.settled(at: Date()) : CoursePixelTide(phase: .hover)
             } else {
                 wave = CoursePixelTide()
             }
@@ -138,12 +156,11 @@ struct CourseSidebarRow: View {
 
     @ViewBuilder private var pixelBackground: some View {
         if shouldAnimate {
-            // Full-screen refresh is unnecessary once a selected row has filled.
-            TimelineView(.animation(minimumInterval: wave.phase == .selected ? 1.0 / 12 : 1.0 / 30)) { timeline in
+            TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
                 pixelCanvas(at: timeline.date)
             }
-        } else if wave.phase == .selected {
-            // A static snapshot leaves no scheduled frames in an inactive window.
+        } else if wave.phase == .settled {
+            // Hover and selection stop scheduling frames after reaching the divider.
             pixelCanvas(at: wave.startedAt)
         }
     }
@@ -160,26 +177,27 @@ struct CourseSidebarRow: View {
     private func settleInactiveWindow() {
         guard !isWindowActive else { return }
         isHovered = false
-        wave = CoursePixelTide(phase: isSelected ? .selected : .idle)
+        wave = CoursePixelTide(phase: isSelected ? .settled : .idle)
     }
 }
 
 /// Time-derived frames avoid publishing row state 30 times a second.
 private struct CoursePixelTide: Hashable {
-    enum Phase: Hashable { case idle, hover, selecting, selected, receding, retracting }
+    enum Phase: Hashable { case idle, hover, selecting, settled, receding, retracting }
 
     var phase: Phase = .idle
     var startedAt: Date = Date()
     var initialProgress: Double = 0
+    var stoppedAt: Date?
 
     private static let tile: Double = 6
     private static let advanceDuration: Double = 4.6
 
     var finishAfter: Double? {
         switch phase {
-        case .selecting: return max(0.04, (1 - initialProgress) * Self.advanceDuration + 0.12)
+        case .hover, .selecting: return max(0.04, (1 - initialProgress) * Self.advanceDuration + 0.12)
         case .receding: return max(0.04, initialProgress * 1.1)
-        case .retracting: return 0.72
+        case .retracting: return max(0.04, initialProgress * 0.72)
         default: return nil
         }
     }
@@ -188,23 +206,30 @@ private struct CoursePixelTide: Hashable {
         let elapsed = max(0, date.timeIntervalSince(startedAt))
         switch phase {
         case .idle: return 0
-        case .selected: return 1
+        case .settled: return 1
         case .hover, .selecting:
             return min(1, initialProgress + elapsed / Self.advanceDuration)
         case .receding: return max(0, initialProgress - elapsed / 1.1)
-        case .retracting: return max(0, 1 - elapsed / 0.72)
+        case .retracting: return max(0, initialProgress - elapsed / 0.72)
         }
+    }
+
+    func settled(at date: Date) -> Self {
+        var result = self
+        result.phase = .settled
+        result.stoppedAt = date
+        return result
     }
 
     func draw(in context: inout GraphicsContext, size: CGSize, at date: Date, accent: Color, dark: Bool) {
         let width = size.width
         let height = size.height
         guard width > 0, height > 0 else { return }
-        let elapsed = max(0, date.timeIntervalSince(startedAt))
+        let elapsed = max(0, (stoppedAt ?? date).timeIntervalSince(startedAt))
         let progress = progress(at: date)
         guard progress > 0 else { return }
         let rows = max(1, Int(ceil(height / Self.tile)))
-        let full = phase == .selected || ((phase == .hover || phase == .selecting) && progress >= 1)
+        let full = phase == .settled || ((phase == .hover || phase == .selecting) && progress >= 1)
         let plainEdge = phase == .retracting || phase == .receding
 
         for row in 0..<rows {
@@ -227,20 +252,9 @@ private struct CoursePixelTide: Hashable {
         }
 
         guard phase == .hover || phase == .selecting else { return }
-        if phase == .selecting {
-            drawFront(in: &context, rows: rows, size: size,
-                      x: width * (initialProgress + elapsed / Self.advanceDuration), elapsed: elapsed,
-                      seed: 0, accent: accent)
-        } else {
-            // Bound work to nearby fronts even if the pointer rests here for hours.
-            let newest = Int(elapsed / 1.35)
-            for front in max(0, newest - 4)...newest {
-                let age = elapsed - Double(front) * 1.35
-                let x = width * ((front == 0 ? initialProgress : 0) + age / Self.advanceDuration)
-                drawFront(in: &context, rows: rows, size: size, x: x, elapsed: elapsed,
-                          seed: Double(front) * 1.7, accent: accent)
-            }
-        }
+        drawFront(in: &context, rows: rows, size: size,
+                  x: width * (initialProgress + elapsed / Self.advanceDuration), elapsed: elapsed,
+                  seed: 0, accent: accent)
     }
 
     private func drawFront(in context: inout GraphicsContext, rows: Int, size: CGSize,
