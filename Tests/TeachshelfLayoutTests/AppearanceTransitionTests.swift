@@ -286,6 +286,67 @@ import TeachshelfCore
         #expect(applied == ["latest", "missing-root", "no-windows"])
     }
 
+    @Test func aDisabledTransitionAppliesImmediatelyWithoutCreatingAnOverlay() throws {
+        let (window, content, root) = makeWindow()
+        defer { window.close() }
+        var settings = AppearanceTransitionSettings.default
+        settings.isEnabled = false
+        var now: TimeInterval = 0
+        var changes = 0
+        let transition = AppearanceTransition(duration: 1, clock: { now })
+        defer { transition.finish() }
+        transition.transition(in: [window], settings: settings) { changes += 1; content.color = .black }
+        #expect(changes == 1)
+        #expect(overlays(in: root).isEmpty)
+        #expect(try sample(content, in: root, at: 0.5).redComponent < 0.1)
+        now = 2; transition.advance(); transition.finish()
+        #expect(changes == 1)
+        #expect(overlays(in: root).isEmpty)
+    }
+
+    @Test(arguments: [0.2, 0.45, 0.7])
+    func disablingAStartedTransitionRemovesTheMaskAndAppliesOnlyTheLatestPendingTarget(at instant: TimeInterval) throws {
+        let (window, content, root) = makeWindow()
+        defer { window.close() }
+        var now: TimeInterval = 0
+        var applied: [String] = []
+        let transition = AppearanceTransition(duration: 1, clock: { now })
+        defer { transition.finish() }
+        transition.transition(in: [window]) { applied.append("previous"); content.color = .black }
+        if instant >= 0.4 { now = 0.4; transition.advance() }
+        if instant >= 0.5 { now = 0.5; transition.advance() }
+        now = instant; transition.advance()
+        #expect(overlays(in: root).count == 1)
+
+        var disabled = AppearanceTransitionSettings.default
+        disabled.isEnabled = false
+        transition.transition(in: [window], settings: disabled) { applied.append("latest"); content.color = .white }
+        let expected = instant < 0.4 ? ["latest"] : ["previous", "latest"]
+        #expect(applied == expected)
+        #expect(overlays(in: root).isEmpty)
+        #expect(try sample(content, in: root, at: 0.5).redComponent > 0.9)
+        now = 2; transition.advance(); transition.finish()
+        #expect(applied == expected)
+        #expect(overlays(in: root).isEmpty)
+    }
+
+    @Test func aDisabledPreviewCreatesNoOverlayAndPreservesTheApplicationAppearance() {
+        let (window, _, root) = makeWindow()
+        let application = NSApplication.shared, previous = application.appearance
+        defer { application.appearance = previous; window.close() }
+        application.appearance = NSAppearance(named: .darkAqua)
+        var disabled = AppearanceTransitionSettings.default
+        disabled.isEnabled = false
+        let transition = AppearanceTransition(duration: 1)
+        defer { transition.finish() }
+        transition.preview(settings: disabled)
+        #expect(overlays(in: root).isEmpty)
+        #expect(application.appearance?.name == .darkAqua)
+        transition.advance(); transition.finish()
+        #expect(overlays(in: root).isEmpty)
+        #expect(application.appearance?.name == .darkAqua)
+    }
+
     @Test(arguments: AppearanceTransitionDirection.allCases)
     func eachDirectionCoversFromItsChosenEdgeAndRevealsFromTheOppositeEdge(direction: AppearanceTransitionDirection) throws {
         let (window, content, root) = makeWindow()
@@ -440,6 +501,39 @@ import TeachshelfCore
         now = start + 0.26; transition.advance()
         now = start + 0.52; transition.advance()
         #expect(overlays(in: root).isEmpty)
+    }
+
+    @Test func theLiveSwitchRemainsVisibleThroughTheCoverAndTracksMovementAndHiding() throws {
+        let (window, content, root) = makeWindow()
+        let (other, otherContent, otherRoot) = makeWindow()
+        defer { window.close(); other.close() }
+        let marker = AppearanceLiveRegion.MarkerView(frame: NSRect(x: 40, y: 80, width: 72, height: 28))
+        content.addSubview(marker)
+        var now: TimeInterval = 0
+        let transition = AppearanceTransition(duration: 1, clock: { now })
+        defer { transition.finish() }
+        transition.transition(in: [window, other]) { content.color = .black; otherContent.color = .black }
+        now = 0.4; transition.advance()
+        let center = NSPoint(x: 76, y: 94)
+        let live = try pixel(at: root.convert(center, from: content), in: root)
+        #expect(live.redComponent < 0.01)
+        #expect(try isGray(pixel(at: otherRoot.convert(center, from: otherContent), in: otherRoot)))
+        #expect(overlays(in: root).first?.liveRects.count == 1)
+        #expect(overlays(in: otherRoot).first?.liveRects.isEmpty == true)
+
+        marker.frame.origin.x = 160
+        now = 0.44; transition.advance()
+        #expect(try isGray(pixel(at: root.convert(center, from: content), in: root)))
+        let moved = try pixel(at: root.convert(NSPoint(x: 196, y: 94), from: content), in: root)
+        #expect(moved.redComponent < 0.01)
+        marker.isHidden = true
+        now = 0.46; transition.advance()
+        #expect(try isGray(pixel(at: root.convert(NSPoint(x: 196, y: 94), from: content), in: root)))
+        #expect(overlays(in: root).first?.liveRects.isEmpty == true)
+        now = 0.5; transition.advance()
+        now = 1.01; transition.advance()
+        #expect(overlays(in: root).isEmpty)
+        #expect(overlays(in: otherRoot).isEmpty)
     }
 
     private func makeWindow(size: NSSize = NSSize(width: 320, height: 200)) -> (NSWindow, ColorView, NSView) {

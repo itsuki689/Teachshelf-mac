@@ -27,6 +27,7 @@ private struct PlanUndo {
 @MainActor final class AppStore: ObservableObject {
     @Published var state: LibraryState
     @Published var repository: LibraryRepository
+    let appearancePreference: AppearancePreference
     @Published var navigation: SidebarSelection? = .all
     @Published var navigationHistory = WorkspaceNavigationHistory()
     @Published var selectedMaterialIDs: Set<UUID> = []
@@ -192,7 +193,9 @@ private struct PlanUndo {
 
     init(repository: LibraryRepository, remembersLocation: Bool = true) {
         self.repository = repository
-        self.state = repository.state
+        let state = repository.state
+        self.state = state
+        self.appearancePreference = AppearancePreference(mode: state.appearance)
         self.canUndoTaskDeletion = repository.canUndoTaskDeletion
         self.remembersLocation = remembersLocation
         scheduleSelection.reconcile(state)
@@ -294,7 +297,11 @@ private struct PlanUndo {
     func courseName(_ id: UUID?) -> String { state.courses.first { $0.id == id }?.name ?? "未分类" }
     func courseColor(_ id: UUID?) -> Color { Color(hex: state.courses.first { $0.id == id }?.colorHex ?? "#39786B") }
     func reload() {
-        state = repository.state
+        var next = repository.state
+        // Another edit may reload a saved intermediate click while a newer target is queued.
+        if appearancePreference.isSaving { next.appearance = state.appearance }
+        state = next
+        appearancePreference.synchronize(state.appearance)
         scheduleSelection.reconcile(state)
         canUndoTaskDeletion = repository.canUndoTaskDeletion
         selectedMaterialIDs.formIntersection(Set(state.materials.map(\.id)))
@@ -315,10 +322,27 @@ private struct PlanUndo {
         alert.runModal()
     }
     func perform(_ action: () throws -> Void) { guard !isBusy else { return }; do { try action(); reload() } catch { report(error) } }
+    func requestAppearance(_ value: String) {
+        guard !isBusy else { return }
+        let repository = repository
+        appearancePreference.request(value, save: { try repository.saveAppearance($0) }, didSave: { [weak self] mode in
+            guard let self, self.repository === repository else { return }
+            // Only the theme changed. Do not rebuild file selection, filtering or navigation.
+            if self.state.appearance != mode { self.state.appearance = mode }
+        }, didFail: { [weak self] error in
+            guard let self, self.repository === repository else { return }
+            // A prior queued click may have committed before the final write failed.
+            let savedMode = self.appearancePreference.mode
+            if self.state.appearance != savedMode { self.state.appearance = savedMode }
+            self.report(error)
+        })
+    }
+    func flushAppearance() async { await appearancePreference.flush() }
     func runOperation(_ label: String, operation: @escaping @Sendable () throws -> String) async {
         guard !isBusy else { return }
         isBusy = true; status = label
         defer { isBusy = false }
+        await flushAppearance()
         do { status = try await Task.detached(priority: .userInitiated, operation: operation).value; reload() }
         catch { report(error) }
     }
@@ -372,6 +396,7 @@ private struct PlanUndo {
         guard !isBusy else { return }
         isBusy = true; status = migrate ? "正在迁移资料库…" : "正在打开资料库…"
         defer { isBusy = false }
+        await flushAppearance()
         let previous = repository
         do {
             let next = try await Task.detached(priority: .userInitiated) {

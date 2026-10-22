@@ -74,6 +74,7 @@ struct ThemeTests {
     }
 
     @Test func transitionDefaultsPreserveOldIndexesAndInvalidStoredPreferencesAreRejected() throws {
+        #expect(AppearanceTransitionSettings.default.isEnabled)
         #expect(AppearanceTransitionSettings.default.direction == .top)
         #expect(AppearanceTransitionSettings.default.speed == 1)
         #expect(AppearanceTransitionSettings.default.colorMode == .solid)
@@ -100,6 +101,7 @@ struct ThemeTests {
 
         let valid = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(AppearanceTransitionSettings.default)) as? [String: Any])
         let invalidFields: [(String, Any)] = [
+            ("isEnabled", NSNull()), ("isEnabled", "false"), ("isEnabled", 0),
             ("speed", 0.49), ("speed", 2.1), ("colorHex", "#123"),
             ("colorHex", " 808080"), ("direction", "diagonal"), ("colorMode", "gradient")
         ]
@@ -116,6 +118,29 @@ struct ThemeTests {
         }
     }
 
+    @Test func olderTransitionPreferencesDefaultToEnabledWithoutLosingCustomizations() throws {
+        let sandbox = try makeSandbox()
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let root = sandbox.appendingPathComponent("Library")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        let index = root.appendingPathComponent("library.json")
+        let expected = AppearanceTransitionSettings(direction: .bottom, speed: 1.7, colorMode: .rainbow, colorHex: "#8058A1")
+        var encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(LibraryState())) as? [String: Any])
+        var settings = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(expected)) as? [String: Any])
+        settings.removeValue(forKey: "isEnabled")
+        encoded["appearanceTransition"] = settings
+        let oldBytes = try JSONSerialization.data(withJSONObject: encoded)
+        try oldBytes.write(to: index)
+
+        let repository = try LibraryRepository(root: root)
+        #expect(repository.state.appearanceTransition == expected)
+        #expect(try Data(contentsOf: index) == oldBytes)
+        try repository.saveAppearanceTransition(expected)
+        let saved = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: index)) as? [String: Any])
+        let savedSettings = try #require(saved["appearanceTransition"] as? [String: Any])
+        #expect(savedSettings["isEnabled"] as? Bool == true)
+    }
+
     @Test func transitionPreferencesSurviveReopenAndOnlyChangeTheirOwnFields() throws {
         let sandbox = try makeSandbox()
         defer { try? FileManager.default.removeItem(at: sandbox) }
@@ -127,7 +152,7 @@ struct ThemeTests {
             try repository.saveCourse(course)
             try repository.saveTask(StudyTask(title: "保留计划", courseID: course.id))
             expected = repository.state
-            let settings = AppearanceTransitionSettings(direction: .right, speed: 2, colorMode: .rainbow, colorHex: " abcdef\n")
+            let settings = AppearanceTransitionSettings(isEnabled: false, direction: .right, speed: 2, colorMode: .rainbow, colorHex: " abcdef\n")
             try repository.saveAppearanceTransition(settings)
             var saved = settings; saved.colorHex = "#ABCDEF"
             expected.appearanceTransition = saved
@@ -164,7 +189,7 @@ struct ThemeTests {
         try FileManager.default.removeItem(at: backup)
         try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: false)
         #expect(throws: (any Error).self) {
-            try repository.saveAppearanceTransition(AppearanceTransitionSettings(direction: .bottom, speed: 0.5, colorMode: .rainbow))
+            try repository.saveAppearanceTransition(AppearanceTransitionSettings(isEnabled: false, direction: .bottom, speed: 0.5, colorMode: .rainbow))
         }
         #expect(repository.state == before)
         #expect(try Data(contentsOf: index) == bytes)
@@ -198,7 +223,7 @@ struct ThemeTests {
         try repository.saveAccentColor("#AE567C")
         try repository.saveCourseBorders(false)
         try repository.saveAppearance("dark")
-        try repository.saveAppearanceTransition(AppearanceTransitionSettings(direction: .left, speed: 0.8,
+        try repository.saveAppearanceTransition(AppearanceTransitionSettings(isEnabled: false, direction: .left, speed: 0.8,
                                                                           colorMode: .rainbow, colorHex: "#8058A1"))
         let original = repository.state
         let backup = sandbox.appendingPathComponent("Theme.teachshelfbackup")

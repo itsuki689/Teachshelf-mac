@@ -64,6 +64,11 @@ private struct AppAppearanceModifier: ViewModifier {
             .onChange(of: store.state.appearance) { _, mode in
                 AppearanceTransition.shared.apply(mode, settings: store.state.appearanceTransition, animated: true)
             }
+            .onChange(of: store.state.appearanceTransition.isEnabled) { _, enabled in
+                if !enabled {
+                    AppearanceTransition.shared.apply(store.state.appearance, settings: store.state.appearanceTransition, animated: false)
+                }
+            }
     }
 }
 

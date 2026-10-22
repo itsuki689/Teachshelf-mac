@@ -36,6 +36,7 @@ public enum AppearanceTransitionColorMode: String, Codable, CaseIterable, Identi
 
 /// Opaque transition colors and motion preferences travel with the library's appearance.
 public struct AppearanceTransitionSettings: Codable, Hashable, Sendable {
+    public var isEnabled: Bool
     public var direction: AppearanceTransitionDirection
     public var speed: Double
     public var colorMode: AppearanceTransitionColorMode
@@ -47,12 +48,26 @@ public struct AppearanceTransitionSettings: Codable, Hashable, Sendable {
         "#58B791", "#4DB6BB", "#568CC9", "#7A75C9", "#AE73BD"
     ]
 
-    public init(direction: AppearanceTransitionDirection = .top, speed: Double = 1,
+    public init(isEnabled: Bool = true, direction: AppearanceTransitionDirection = .top, speed: Double = 1,
                 colorMode: AppearanceTransitionColorMode = .solid, colorHex: String = "#808080") {
+        self.isEnabled = isEnabled
         self.direction = direction
         self.speed = speed
         self.colorMode = colorMode
         self.colorHex = colorHex
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isEnabled, direction, speed, colorMode, colorHex
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        isEnabled = values.contains(.isEnabled) ? try values.decode(Bool.self, forKey: .isEnabled) : true
+        direction = try values.decode(AppearanceTransitionDirection.self, forKey: .direction)
+        speed = try values.decode(Double.self, forKey: .speed)
+        colorMode = try values.decode(AppearanceTransitionColorMode.self, forKey: .colorMode)
+        colorHex = try values.decode(String.self, forKey: .colorHex)
     }
 
     public var isValid: Bool {

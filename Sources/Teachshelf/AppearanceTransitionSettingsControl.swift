@@ -20,16 +20,30 @@ struct AppearanceTransitionSettingsControl: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 Text("明暗过渡").font(.headline)
+                Toggle("启用明暗过渡", isOn: Binding(get: { draft.isEnabled }, set: { enabled in
+                    commitHex()
+                    hexInput = draft.colorHex
+                    draft.isEnabled = enabled
+                    hexFocused = false
+                    if !enabled {
+                        editingSpeed = false
+                        NSColorPanel.shared.orderOut(nil)
+                    }
+                    persistDraft()
+                }))
+                .labelsHidden().toggleStyle(.switch).controlSize(.small).tint(theme.controlAccent)
+                .accessibilityIdentifier("appearance.transition.enabled")
                 Spacer()
                 Button {
+                    guard draft.isEnabled, !reduceMotion, draft.colorMode != .solid || validHex else { return }
                     commitHex()
                     if persistDraft() { AppearanceTransition.shared.preview(settings: draft) }
                 } label: {
                     Label("预览", systemImage: "play.fill")
                 }
                 .controlSize(.small)
-                .disabled(reduceMotion || (draft.colorMode == .solid && !validHex))
-                .help(reduceMotion ? "系统已开启减少动态效果" : "预览过渡动画")
+                .disabled(!draft.isEnabled || reduceMotion || (draft.colorMode == .solid && !validHex))
+                .help(!draft.isEnabled ? "明暗过渡已关闭" : (reduceMotion ? "系统已开启减少动态效果" : "预览过渡动画"))
                 .accessibilityIdentifier("appearance.transition.preview")
             }
 
@@ -62,6 +76,7 @@ struct AppearanceTransitionSettingsControl: View {
                     }
                 }
             }
+            .disabled(!draft.isEnabled).opacity(draft.isEnabled ? 1 : 0.6)
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -87,6 +102,7 @@ struct AppearanceTransitionSettingsControl: View {
                     Text("快").font(.caption).foregroundStyle(.secondary)
                 }
             }
+            .disabled(!draft.isEnabled).opacity(draft.isEnabled ? 1 : 0.6)
 
             VStack(alignment: .leading, spacing: 11) {
                 HStack {
@@ -136,6 +152,7 @@ struct AppearanceTransitionSettingsControl: View {
                     .accessibilityLabel("彩虹十色预览")
                 }
             }
+            .disabled(!draft.isEnabled).opacity(draft.isEnabled ? 1 : 0.6)
 
             HStack {
                 Text(durationText).font(.caption).foregroundStyle(.secondary)

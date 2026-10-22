@@ -39,7 +39,7 @@ import TeachshelfCore
         let appearance: NSAppearance? = normalized == "system" ? nil
             : NSAppearance(named: normalized == "dark" ? .darkAqua : .aqua)
         let windows = Self.normalWindows()
-        let motionAllowed = NSApp.isActive && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let motionAllowed = settings.isEnabled && NSApp.isActive && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if phase != nil, requestedMode == normalized, motionAllowed {
             // A new scene's onAppear may be non-animated. Join it to the existing
             // sweep rather than canceling every other window's transition.
@@ -63,7 +63,7 @@ import TeachshelfCore
 
     /// Preview the mask without changing appearance or replacing an in-flight request.
     func preview(settings: AppearanceTransitionSettings) {
-        guard phase == nil, NSApp.isActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        guard settings.isEnabled, phase == nil, NSApp.isActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         switch NSApp.appearance?.name {
         case .darkAqua: requestedMode = "dark"
         case .aqua: requestedMode = "light"
@@ -73,6 +73,12 @@ import TeachshelfCore
     }
 
     func transition(in windows: [NSWindow], settings value: AppearanceTransitionSettings = .default, changes: @escaping () -> Void) {
+        guard value.isEnabled else {
+            pendingChanges = nil
+            finish()
+            changes()
+            return
+        }
         if phase == nil {
             // Freeze a cycle's palette and timing, including any reversal. Settings
             // edited behind the mask take effect on the next complete cycle.
@@ -119,6 +125,7 @@ import TeachshelfCore
             if let reference { overlay.synchronize(with: reference) }
             else if case .holding = phase { overlay.cover() }
             root.addSubview(overlay, positioned: .above, relativeTo: nil)
+            overlay.updateLiveRegions(in: root)
             frames.append(Frame(window: window, overlay: overlay))
         }
     }
@@ -131,6 +138,7 @@ import TeachshelfCore
                 return true
             }
             if frame.overlay.frame != root.bounds { frame.overlay.frame = root.bounds }
+            frame.overlay.updateLiveRegions(in: root)
             return false
         }
         guard !frames.isEmpty else { finish(); return }
@@ -197,6 +205,7 @@ import TeachshelfCore
         private var coveringFrom = Array(repeating: CGFloat.zero, count: count)
         private let direction: AppearanceTransitionDirection
         private let colors: [NSColor]
+        private(set) var liveRects: [NSRect] = []
 
         init(frame frameRect: NSRect, settings: AppearanceTransitionSettings) {
             direction = settings.direction
@@ -216,6 +225,13 @@ import TeachshelfCore
         override var isFlipped: Bool { true }
         override var acceptsFirstResponder: Bool { false }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        func updateLiveRegions(in root: NSView) {
+            let rects = AppearanceLiveRegion.rectangles(in: root).map { convert($0, from: root) }
+            guard rects != liveRects else { return }
+            liveRects = rects
+            needsDisplay = true
+        }
 
         func beginCovering() { coveringFrom = opacities }
         func synchronize(with other: BlockOverlay) {
@@ -245,6 +261,16 @@ import TeachshelfCore
             return CGFloat(1 - pow(1 - local, 3))
         }
         override func draw(_ dirtyRect: NSRect) {
+            guard let context = NSGraphicsContext.current?.cgContext else { return }
+            context.saveGState()
+            defer { context.restoreGState() }
+            let path = CGMutablePath()
+            path.addRect(bounds)
+            for rect in liveRects {
+                path.addRoundedRect(in: rect, cornerWidth: rect.height / 2, cornerHeight: rect.height / 2)
+            }
+            context.addPath(path)
+            context.clip(using: .evenOdd)
             let horizontal = direction == .left || direction == .right
             let step = (horizontal ? bounds.width : bounds.height) / CGFloat(Self.count)
             let reversed = direction == .bottom || direction == .right

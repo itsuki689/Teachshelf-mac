@@ -65,12 +65,15 @@ import AppKit
         guard let store else { return .terminateNow }
         waitingToQuit = true
         Task { [weak self] in
+            await store.flushAppearance()
             await store.flushTeachingLogin()
+            await store.flushAppearance()
             self?.finishQuit(sender)
         }
         // A stalled WebKit cookie process must not prevent an otherwise safe quit.
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(3))
+            await store.flushAppearance()
             self?.finishQuit(sender)
         }
         return .terminateLater
