@@ -73,6 +73,20 @@ enum TeachingWebError: LocalizedError {
     }
 
     func load(_ url: URL) async throws {
+        // Moodle resource modules often redirect straight to an attachment. Resolve their
+        // headers with HEAD, so discovery does not transfer the file before confirmation.
+        let resource = url.path == "/mod/resource/view.php"
+        try await loadPage(url, headOnly: resource)
+        if resource, webView.url?.path == "/mod/resource/view.php" { try await loadPage(url, headOnly: false) }
+    }
+
+    static func pageRequest(_ url: URL, headOnly: Bool) -> URLRequest {
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
+        request.httpMethod = headOnly ? "HEAD" : "GET"
+        return request
+    }
+
+    private func loadPage(_ url: URL, headOnly: Bool) async throws {
         guard !closed, TeachingWebsite.isPage(url), continuation == nil else { throw TeachingWebError.blocked }
         openTask?.cancel()
         await loginSession.prepare()
@@ -90,7 +104,7 @@ enum TeachingWebError: LocalizedError {
                         self.completeLoad(.failure(TeachingWebError.timeout)); self.webView.stopLoading()
                     } catch {}
                 }
-                currentNavigation = webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30))
+                currentNavigation = webView.load(Self.pageRequest(url, headOnly: headOnly))
             }
         } onCancel: { Task { @MainActor [weak self] in self?.cancel() } }
     }
@@ -185,13 +199,17 @@ enum TeachingWebError: LocalizedError {
             completeLoad(.failure(TeachingWebError.blocked)); decisionHandler(.cancel); return
         }
         if navigationAction.targetFrame?.isMainFrame == true, navigationAction.request.url?.host == TeachingWebsite.host,
-           navigationAction.request.url?.path == "/login/logout.php" { loginRecovery.cancel(); loginSession.needsLogin() }
+           navigationAction.request.url?.path == "/login/logout.php" { loginRecovery.cancel(); loginSession.needsLogin(explicitLogout: true) }
         decisionHandler(.allow)
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         if continuation != nil, navigationResponse.isForMainFrame, TeachingWebsite.isDownload(navigationResponse.response.url), let url = navigationResponse.response.url {
             completeLoad(.failure(TeachingWebError.directFile(url, navigationResponse.response.suggestedFilename ?? url.lastPathComponent)))
             decisionHandler(.cancel); return
+        }
+        if continuation != nil, navigationResponse.isForMainFrame, navigationResponse.response.url?.path == "/mod/resource/view.php",
+           !["text/html", "application/xhtml+xml"].contains(navigationResponse.response.mimeType?.lowercased() ?? "") {
+            completeLoad(.failure(TeachingWebError.unreadable)); decisionHandler(.cancel); return
         }
         if let response = navigationResponse.response as? HTTPURLResponse, response.statusCode >= 400 {
             completeLoad(.failure(TeachingWebError.unreadable))

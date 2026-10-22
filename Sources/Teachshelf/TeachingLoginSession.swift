@@ -114,6 +114,7 @@ struct TeachingSavedSession: Codable {
     private var preparation: Task<Void, Never>?
     private var capture: Task<Void, Never>?
     private var verified = false
+    private var mayInvalidateSavedSession = false
     private var closed = false
     private var generation = UUID()
     private var savedCookies: [TeachingSavedCookie] = []
@@ -154,7 +155,8 @@ struct TeachingSavedSession: Codable {
                     await self.jar.setCookie(cookie)
                 }
                 guard !self.closed, self.enabled, expected == self.generation else { return }
-                self.savedCookies = record.cookies; self.status = "已恢复本机会话，等待网站验证"; self.hasIssue = false
+                self.savedCookies = record.cookies; self.mayInvalidateSavedSession = true
+                self.status = "已恢复本机会话，等待网站验证"; self.hasIssue = false
             } catch { self.status = error.localizedDescription; self.hasIssue = true }
         }
         preparation = task
@@ -175,13 +177,19 @@ struct TeachingSavedSession: Codable {
     }
     func didAuthenticate() {
         guard !closed else { return }
-        verified = true
+        verified = true; mayInvalidateSavedSession = true
         if enabled { scheduleSave() }
     }
-    func needsLogin() {
+    func needsLogin(explicitLogout: Bool = false) {
         verified = false; generation = UUID(); capture?.cancel(); capture = nil; savedCookies = []
         guard enabled else { return }
-        do { try storage.remove(allowInteraction: false); status = "学校要求重新登录，成功后将保存新会话"; hasIssue = false }
+        // An app update may need renewed keychain permission. A failed read is not
+        // evidence that the saved session expired, so never delete it in that case.
+        guard mayInvalidateSavedSession || explicitLogout else {
+            if !hasIssue { status = "学校要求重新登录，成功后将保存新会话" }
+            return
+        }
+        do { try storage.remove(allowInteraction: false); mayInvalidateSavedSession = false; status = "学校要求重新登录，成功后将保存新会话"; hasIssue = false }
         catch { status = error.localizedDescription; hasIssue = true }
     }
     func saveNow(allowInteraction: Bool = false) async {

@@ -77,6 +77,31 @@ extension LibraryRepository {
     }
 
     /// Downloaded bytes and their source identity commit together. Prior versions stay in the library.
+    public func teachingFileState(connectionID: UUID, activity: TeachingActivity, file: TeachingFile) throws -> TeachingFileState {
+        try withLock {
+            guard let connection = snapshot.teachingConnections.first(where: { $0.id == connectionID }) else { throw LibraryError.missingRecord("课程连接") }
+            guard let link = connection.items.first(where: { $0.id == "file:\(activity.key):\(file.key)" }) else { return .new }
+            guard !link.ignored, let material = snapshot.materials.first(where: { $0.id == link.localID }), material.courseID == connection.courseID else { return .ignored }
+            guard let url = try? resolveURL(material), fm.isReadableFile(atPath: url.path) else { return .missing }
+            return .existing
+        }
+    }
+
+    /// Runs exactly the same merge as confirmation, against a disposable snapshot.
+    public func previewTeachingAssignment(connectionID: UUID, activity: TeachingActivity, page: TeachingPage, now: Date = Date()) throws -> TeachingAssignmentChange? {
+        try withLock {
+            var state = snapshot, message = ""
+            let oldLink = state.teachingConnections.first { $0.id == connectionID }?.items.first { $0.id == "plan:\(activity.id)" }
+            let before = state.tasks.first { $0.id == oldLink?.localID }
+            try Self.mergeTeachingAssignment(state: &state, connectionID: connectionID, activity: activity, page: page, now: now, message: &message)
+            guard let connection = state.teachingConnections.first(where: { $0.id == connectionID }),
+                  let link = connection.items.first(where: { $0.id == "plan:\(activity.id)" }), !link.ignored,
+                  let task = state.tasks.first(where: { $0.id == link.localID && $0.courseID == connection.courseID }), !task.isArchived,
+                  task != before || link.pendingDeadline != nil else { return nil }
+            return TeachingAssignmentChange(before: before, proposed: task, pendingDeadline: link.pendingDeadline, message: message)
+        }
+    }
+
     public func syncTeachingFile(connectionID: UUID, activity: TeachingActivity, file: TeachingFile, downloadedURL: URL) throws -> String {
         guard TeachingWebsite.isDownload(file.url), TeachingWebsite.identifier(activity.url) == activity.id,
               ["folder", "resource", "assign"].contains(activity.kind), !file.name.isEmpty,
@@ -149,49 +174,55 @@ extension LibraryRepository {
         guard activity.kind == "assign", TeachingWebsite.isPage(activity.url) else { throw LibraryError.invalidInput("不是可读取的作业页面。") }
         var message = ""
         try commit { state in
-            guard let c = state.teachingConnections.firstIndex(where: { $0.id == connectionID }),
-                  let course = state.courses.first(where: { $0.id == state.teachingConnections[c].courseID }), !course.isArchived else { throw LibraryError.missingRecord("课程连接") }
-            var connection = state.teachingConnections[c]
-            guard page.accountID == connection.accountID, page.courseID == connection.remoteCourseID else { throw LibraryError.invalidInput("网站账号或课程已变化，请重新连接。") }
-            let key = "plan:\(activity.id)", parsed = TeachingWebsite.deadline(page.deadlineText, timeZone: connection.timeZone)
-            let unclear = !page.deadlineText.isEmpty && parsed.date == nil
-            let previous = connection.items.first { $0.id == key }
-            let index = state.tasks.firstIndex { $0.id == previous?.localID }
-            if let previous, previous.ignored || index == nil || index.map({ state.tasks[$0].courseID != course.id }) == true {
-                if let i = connection.items.firstIndex(where: { $0.id == key }) { connection.items[i].ignored = true }
-                state.teachingConnections[c] = connection; message = "忽略 · \(activity.title)（已在本地移除或转移）"; return
-            }
-            if previous == nil, !connection.includeHistory, page.submitted || (parsed.date.map { $0 < now } ?? false) {
-                message = "跳过历史 · \(activity.title)"; return
-            }
-            if let index, state.tasks[index].isArchived { message = "保留归档 · \(activity.title)"; return }
-            let content = String(page.intro.prefix(80_000)) + "\n\n教学网站：\(activity.url.absoluteString)"
-            var task = index.map { state.tasks[$0] } ?? StudyTask(title: activity.title, kind: activity.isExperiment ? "实验" : "作业", courseID: course.id, origin: .fixed, hasExecutionTime: false)
-            let before = task
-            if previous == nil || task.title == previous?.title { task.title = activity.title }
-            if previous == nil || task.content == previous?.content { task.content = content }
-            task.courseNameSnapshot = course.name
-            let attachments = connection.items.filter { $0.id.hasPrefix("file:\(activity.key):") }.compactMap(\.localID).filter { id in state.materials.contains { $0.id == id } }
-            task.materialIDs = Array(Set(task.materialIDs + attachments)).sorted { $0.uuidString < $1.uuidString }
-            var link = previous ?? TeachingItemLink(id: key, localID: task.id, title: activity.title)
-            if !unclear, previous == nil || link.remoteDeadline != parsed.date || link.remoteDeadlineIsAllDay != parsed.allDay {
-                if previous == nil || (task.deadline == link.appliedDeadline && task.deadlineIsAllDay == (link.appliedDeadlineIsAllDay ?? task.deadlineIsAllDay) && task.repeatRule == nil) {
-                    task.deadline = parsed.date; task.deadlineIsAllDay = parsed.allDay
-                    link.appliedDeadline = parsed.date; link.appliedDeadlineIsAllDay = parsed.allDay; link.pendingDeadline = nil
-                } else { link.pendingDeadline = TeachingDeadlineChange(date: parsed.date, allDay: parsed.allDay, text: page.deadlineText) }
-                link.remoteDeadline = parsed.date
-                link.remoteDeadlineIsAllDay = parsed.allDay
-            }
-            if previous == nil, page.submitted { task.completedAt = now }
-            link.title = activity.title; link.content = content; link.submitted = page.submitted
-            if let index { state.tasks[index] = task } else { state.tasks.append(task) }
-            connection.items.removeAll { $0.id == key }; connection.items.append(link); state.teachingConnections[c] = connection
-            message = "\(index == nil ? "新增计划" : (task == before ? "未变" : "更新计划")) · \(activity.title)"
-            if unclear { message += " · 截止时间待核对：\(page.deadlineText)" }
-            if link.pendingDeadline != nil { message += " · 截止时间冲突待处理" }
+            try Self.mergeTeachingAssignment(state: &state, connectionID: connectionID, activity: activity, page: page, now: now, message: &message)
         }
         return message
     }
+
+    private static func mergeTeachingAssignment(state: inout LibraryState, connectionID: UUID, activity: TeachingActivity, page: TeachingPage, now: Date, message: inout String) throws {
+        guard activity.kind == "assign", TeachingWebsite.isPage(activity.url) else { throw LibraryError.invalidInput("不是可读取的作业页面。") }
+        guard let c = state.teachingConnections.firstIndex(where: { $0.id == connectionID }),
+              let course = state.courses.first(where: { $0.id == state.teachingConnections[c].courseID }), !course.isArchived else { throw LibraryError.missingRecord("课程连接") }
+        var connection = state.teachingConnections[c]
+        guard page.accountID == connection.accountID, page.courseID == connection.remoteCourseID else { throw LibraryError.invalidInput("网站账号或课程已变化，请重新连接。") }
+        let key = "plan:\(activity.id)", parsed = TeachingWebsite.deadline(page.deadlineText, timeZone: connection.timeZone)
+        let unclear = !page.deadlineText.isEmpty && parsed.date == nil
+        let previous = connection.items.first { $0.id == key }
+        let index = state.tasks.firstIndex { $0.id == previous?.localID }
+        if let previous, previous.ignored || index == nil || index.map({ state.tasks[$0].courseID != course.id }) == true {
+            if let i = connection.items.firstIndex(where: { $0.id == key }) { connection.items[i].ignored = true }
+            state.teachingConnections[c] = connection; message = "忽略 · \(activity.title)（已在本地移除或转移）"; return
+        }
+        if previous == nil, !connection.includeHistory, page.submitted || (parsed.date.map { $0 < now } ?? false) {
+            message = "跳过历史 · \(activity.title)"; return
+        }
+        if let index, state.tasks[index].isArchived { message = "保留归档 · \(activity.title)"; return }
+        let content = String(page.intro.prefix(80_000)) + "\n\n教学网站：\(activity.url.absoluteString)"
+        var task = index.map { state.tasks[$0] } ?? StudyTask(title: activity.title, kind: activity.isExperiment ? "实验" : "作业", courseID: course.id, origin: .fixed, hasExecutionTime: false)
+        let before = task
+        if previous == nil || task.title == previous?.title { task.title = activity.title }
+        if previous == nil || task.content == previous?.content { task.content = content }
+        task.courseNameSnapshot = course.name
+        let attachments = connection.items.filter { $0.id.hasPrefix("file:\(activity.key):") && !$0.ignored }.compactMap(\.localID).filter { id in state.materials.contains { $0.id == id && $0.courseID == course.id } }
+        task.materialIDs = Array(Set(task.materialIDs + attachments)).sorted { $0.uuidString < $1.uuidString }
+        var link = previous ?? TeachingItemLink(id: key, localID: task.id, title: activity.title)
+        if !unclear, previous == nil || link.remoteDeadline != parsed.date || link.remoteDeadlineIsAllDay != parsed.allDay {
+            if previous == nil || (task.deadline == link.appliedDeadline && task.deadlineIsAllDay == (link.appliedDeadlineIsAllDay ?? task.deadlineIsAllDay) && task.repeatRule == nil) {
+                task.deadline = parsed.date; task.deadlineIsAllDay = parsed.allDay
+                link.appliedDeadline = parsed.date; link.appliedDeadlineIsAllDay = parsed.allDay; link.pendingDeadline = nil
+            } else { link.pendingDeadline = TeachingDeadlineChange(date: parsed.date, allDay: parsed.allDay, text: page.deadlineText) }
+            link.remoteDeadline = parsed.date
+            link.remoteDeadlineIsAllDay = parsed.allDay
+        }
+        if previous == nil, page.submitted { task.completedAt = now }
+        link.title = activity.title; link.content = content; link.submitted = page.submitted
+        if let index { state.tasks[index] = task } else { state.tasks.append(task) }
+        connection.items.removeAll { $0.id == key }; connection.items.append(link); state.teachingConnections[c] = connection
+        message = "\(index == nil ? "新增计划" : (task == before ? "未变" : "更新计划")) · \(activity.title)"
+        if unclear { message += " · 截止时间待核对：\(page.deadlineText)" }
+        if link.pendingDeadline != nil { message += " · 截止时间冲突待处理" }
+    }
+
 
     private static func teachingFolder(_ path: [(String, String)], courseID: UUID, connection: inout TeachingConnection, state: inout LibraryState) -> UUID? {
         var parent: UUID?

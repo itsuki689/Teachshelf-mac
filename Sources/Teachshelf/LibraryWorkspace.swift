@@ -105,10 +105,16 @@ struct LibraryWorkspace: View {
                 let connection = store.state.teachingConnections.first { $0.courseID == id }
                 Button {
                     guard store.beforeLeavingMaterial?() != false else { return }
-                    store.teachingConnectionToOpen = connection?.id; store.showingTeachingWebsite = true
+                    store.teachingUpdateAll = false; store.teachingConnectionToOpen = connection?.id; store.showingTeachingWebsite = true
                 } label: { Label(connection == nil ? "连接教学网站" : "网站更新", systemImage: connection == nil ? "globe" : "arrow.clockwise") }
                     .buttonStyle(.bordered).help(connection == nil ? "连接课件、作业与实验" : "检查网站课件和作业的更新")
                 Button { store.courseToEdit = course; store.showingCourseEditor = true } label: { Image(systemName: "ellipsis.circle") }.buttonStyle(.borderless).help("编辑课程")
+            } else if !store.state.teachingConnections.isEmpty {
+                Button {
+                    guard store.beforeLeavingMaterial?() != false else { return }
+                    store.teachingUpdateAll = true; store.teachingConnectionToOpen = nil; store.showingTeachingWebsite = true
+                } label: { Label("网站更新", systemImage: "arrow.triangle.2.circlepath") }
+                    .buttonStyle(.bordered).help("检查所有已连接课程的网站更新")
             }
             Picker("视图", selection: $presentation) {
                 Image(systemName: "list.bullet").tag("list")

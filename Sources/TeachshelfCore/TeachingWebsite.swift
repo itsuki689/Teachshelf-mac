@@ -111,6 +111,15 @@ public struct TeachingDeadlineChange: Codable, Hashable, Sendable {
     public var text: String
 }
 
+public enum TeachingFileState: Equatable, Sendable { case new, existing, missing, ignored }
+
+public struct TeachingAssignmentChange: Sendable {
+    public let before: StudyTask?
+    public let proposed: StudyTask
+    public let pendingDeadline: TeachingDeadlineChange?
+    public let message: String
+}
+
 public struct TeachingItemLink: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var localID: UUID?

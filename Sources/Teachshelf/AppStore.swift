@@ -51,6 +51,7 @@ private struct PlanUndo {
     @Published var showingCourseEditor = false
     @Published var showingTeachingWebsite = false
     @Published var teachingConnectionToOpen: UUID?
+    @Published var teachingUpdateAll = false
     private var teachingSession: TeachingWebsiteController?
     private var teachingSessionRoot: URL?
 

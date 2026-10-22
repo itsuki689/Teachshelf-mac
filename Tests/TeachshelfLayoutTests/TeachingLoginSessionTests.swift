@@ -9,7 +9,8 @@ import Testing
         var writes = 0
         var deletes = 0
         var fail = false
-        func read(allowInteraction: Bool) throws -> Data? { reads += 1; if fail { throw Failure() }; return data }
+        var failRead = false
+        func read(allowInteraction: Bool) throws -> Data? { reads += 1; if fail || failRead { throw Failure() }; return data }
         func write(_ data: Data, allowInteraction: Bool) throws { if fail { throw Failure() }; self.data = data; writes += 1 }
         func remove(allowInteraction: Bool) throws { if fail { throw Failure() }; data = nil; deletes += 1 }
         struct Failure: LocalizedError { var errorDescription: String? { "测试钥匙串不可用" } }
@@ -156,5 +157,21 @@ import Testing
         let saved = try #require(TeachingSavedCookie(original, now: now))
         let restored = try #require(saved.cookie(now: now))
         #expect(restored.isSecure && restored.value == original.value && restored.expiresDate == original.expiresDate)
+    }
+
+    @Test func keychainReadPermissionFailureCannotEraseThePreviousSession() async throws {
+        let (preferences, suite, storage, _, session) = fixture()
+        defer { session.close(); preferences.removePersistentDomain(forName: suite) }
+        session.setEnabled(true)
+        let data = try JSONEncoder().encode(TeachingSavedSession(version: 1, savedAt: Date(), cookies: [TeachingSavedCookie(cookie(), now: Date())!]))
+        storage.data = data; storage.failRead = true
+        let deletes = storage.deletes
+        await session.prepare(); session.needsLogin()
+        #expect(session.hasIssue && storage.data == data && storage.deletes == deletes)
+        storage.failRead = false
+        let jar = Jar()
+        let recovered = TeachingLoginSession(profile: "test", preferences: preferences, storage: storage, jar: jar)
+        defer { recovered.close() }
+        await recovered.prepare(); #expect(jar.installed.count == 1)
     }
 }

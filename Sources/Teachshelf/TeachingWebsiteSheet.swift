@@ -15,11 +15,13 @@ struct TeachingWebsiteSheet: View {
     @ViewState private var includeAssignments = true
     @ViewState private var includeExperiments = true
     @ViewState private var disconnectID: UUID?
+    @ViewState private var showAllCourses = false
 
-    init(controller: TeachingWebsiteController, initialCourseID: UUID?, connectionID: UUID?) {
+    init(controller: TeachingWebsiteController, initialCourseID: UUID?, connectionID: UUID?, showAllCourses: Bool = false) {
         _controller = StateObject(wrappedValue: controller)
         _targetCourseID = ViewState(initialValue: initialCourseID)
         _selectedID = ViewState(initialValue: connectionID)
+        _showAllCourses = ViewState(initialValue: showAllCourses)
     }
     private var selected: TeachingConnection? { store.state.teachingConnections.first { $0.id == selectedID } }
     private var working: Bool { controller.updating || controller.reading }
@@ -33,39 +35,47 @@ struct TeachingWebsiteSheet: View {
                     Text("南京大学 · 课件、作业与实验").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                if controller.updating { Button("取消更新") { controller.cancel() } }
+                if controller.updating { Button(controller.checking ? "取消检查" : "取消更新") { controller.cancel() } }
                 Button("完成") { controller.suspend(); dismiss() }.keyboardShortcut(.cancelAction).disabled(working)
             }.padding(20)
             TeachingSessionControls(session: controller.client.loginSession).disabled(working)
             Divider()
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 10) {
+                    Button { showAllCourses = true; selectedID = nil; controller.showWeb = false; controller.preview = nil } label: {
+                        Label("全部课程", systemImage: "arrow.triangle.2.circlepath")
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(11)
+                            .background(showAllCourses ? Color.primary.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+                    }.buttonStyle(.plain)
                     Text("已连接课程").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     ScrollView {
                         VStack(spacing: 6) {
                             ForEach(store.state.teachingConnections) { connection in
                                 Button {
-                                    selectedID = connection.id; controller.showWeb = false; controller.preview = nil; controller.messages = []
+                                    showAllCourses = false; selectedID = connection.id; controller.showWeb = false; controller.preview = nil; controller.messages = []
                                 } label: {
                                     VStack(alignment: .leading, spacing: 5) {
                                         Text(store.courseName(connection.courseID)).font(.callout.weight(.medium)).lineLimit(2)
                                         Text(connection.lastSyncAt.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "尚未更新")
                                             .font(.caption).foregroundStyle(.secondary)
                                     }.frame(maxWidth: .infinity, alignment: .leading).padding(11)
-                                        .background(selectedID == connection.id ? Color.primary.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+                                        .background(!showAllCourses && selectedID == connection.id ? Color.primary.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
                                 }.buttonStyle(.plain)
                             }
                         }
                     }
-                    Button { selectedID = nil; controller.preview = nil; controller.showWeb = false; controller.messages = [] } label: {
+                    Button { showAllCourses = false; selectedID = nil; controller.preview = nil; controller.showWeb = false; controller.messages = [] } label: {
                         Label("连接课程", systemImage: "plus")
                     }.buttonStyle(.bordered)
-                }.padding(16).frame(width: 225).disabled(working)
+                }.padding(16).frame(width: 225).disabled(working || controller.hasReview)
                 Divider()
                 VStack(spacing: 14) {
-                    if let selected { connectedHeader(selected) } else { connectionHeader }
+                    if showAllCourses { globalHeader } else if let selected { connectedHeader(selected) } else { connectionHeader }
                     if controller.showWeb {
                         TeachingLoginView(client: controller.client).allowsHitTesting(!controller.updating).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if controller.hasReview {
+                        TeachingUpdateReviewView(controller: controller)
+                    } else if showAllCourses { resultsView(nil)
                     } else if selected == nil {
                         if let preview = controller.preview { previewView(preview) }
                         else {
@@ -83,12 +93,30 @@ struct TeachingWebsiteSheet: View {
         }.frame(width: 1000, height: 660)
             .interactiveDismissDisabled(working)
             .onDisappear { controller.suspend() }
+            .onAppear {
+                if controller.hasReview {
+                    showAllCourses = controller.reviewIsGlobal
+                    selectedID = showAllCourses ? nil : controller.reviewSources.first?.id
+                }
+            }
             .confirmationDialog("断开连接？资料、计划和文件会保留。", isPresented: Binding(get: { disconnectID != nil }, set: { if !$0 { disconnectID = nil } })) {
                 Button("断开连接", role: .destructive) {
                     if let id = disconnectID { store.perform { try store.repository.disconnectTeachingWebsite(id) }; selectedID = nil }
                     disconnectID = nil
                 }
             }
+    }
+    private var globalHeader: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("全局更新").font(.headline)
+                Text("检查所有已连接且未归档的课程，汇总后确认。").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("检查全部课程") { controller.check(store.state.teachingConnections, store: store, global: true) }
+                .buttonStyle(.borderedProminent).disabled(working || controller.hasReview)
+            if controller.showWeb { Button("返回清单") { controller.showWeb = false }.font(.caption).disabled(working) }
+        }
     }
     private var connectionHeader: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -155,7 +183,7 @@ struct TeachingWebsiteSheet: View {
                     connection.includeAssignments = includeAssignments; connection.includeExperiments = includeExperiments
                     do {
                         try store.repository.saveTeachingConnection(connection); store.reload(); selectedID = connection.id
-                        controller.preview = nil; controller.showWeb = false; controller.status = "连接已保存，点击「更新」开始下载与导入。"
+                        controller.preview = nil; controller.showWeb = false; controller.status = "连接已保存，点击「检查更新」生成确认清单。"
                     } catch { controller.status = error.localizedDescription }
                 }.appPrimaryButton().disabled(!store.state.courses.contains { $0.id == targetCourseID && !$0.isArchived } || (!includeMaterials && !includeAssignments && !includeExperiments))
             }
@@ -170,8 +198,8 @@ struct TeachingWebsiteSheet: View {
                 }
                 Spacer()
                 Button("登录／查看来源") { controller.openCourse(connection.remoteCourseID) }.disabled(working)
-                Button { controller.update(connection, store: store) } label: { Label("更新", systemImage: "arrow.clockwise") }
-                    .appPrimaryButton().disabled(working || store.state.courses.first { $0.id == connection.courseID }?.isArchived == true)
+                Button { controller.check([connection], store: store) } label: { Label("检查更新", systemImage: "arrow.clockwise") }
+                    .buttonStyle(.borderedProminent).disabled(working || controller.hasReview || store.state.courses.first { $0.id == connection.courseID }?.isArchived == true)
                 Menu {
                     Toggle("同步课件", isOn: option(connection, \.includeMaterials))
                     Toggle("同步作业", isOn: option(connection, \.includeAssignments))
@@ -180,9 +208,9 @@ struct TeachingWebsiteSheet: View {
                     Divider()
                     Button("重新加入已忽略的条目") { store.perform { try store.repository.restoreIgnoredTeachingItems(connection.id) } }
                     Button("断开连接…", role: .destructive) { disconnectID = connection.id }
-                } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 22).disabled(working)
+                } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 22).disabled(working || controller.hasReview)
             }
-            if controller.showWeb { Button("返回更新记录") { controller.showWeb = false }.buttonStyle(.plain).font(.caption).disabled(working) }
+            if controller.showWeb { Button(controller.hasReview ? "返回更新清单" : "返回更新记录") { controller.showWeb = false }.buttonStyle(.plain).font(.caption).disabled(working) }
         }
     }
     private func option(_ connection: TeachingConnection, _ key: WritableKeyPath<TeachingConnection, Bool>) -> Binding<Bool> {
@@ -191,23 +219,25 @@ struct TeachingWebsiteSheet: View {
             store.perform { try store.repository.saveTeachingConnection(edited) }
         })
     }
-    private func resultsView(_ connection: TeachingConnection) -> some View {
+    private func resultsView(_ connection: TeachingConnection?) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                ForEach(connection.items.filter { $0.pendingDeadline != nil }) { link in
+                ForEach((connection?.items ?? []).filter { $0.pendingDeadline != nil }) { link in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(link.title).font(.callout.weight(.semibold))
                         Text("网站截止时间：\(link.pendingDeadline?.text.isEmpty == false ? link.pendingDeadline!.text : "未设置")").font(.caption)
                         Text("本地：\(store.state.tasks.first { $0.id == link.localID }?.deadline?.formatted(date: .abbreviated, time: .shortened) ?? "未设置")").font(.caption).foregroundStyle(.secondary)
                         HStack {
-                            Button("采用网站时间") { resolve(connection.id, link.id, true) }
-                            Button("保留本地时间") { resolve(connection.id, link.id, false) }
+                            Button("采用网站时间") { if let connection { resolve(connection.id, link.id, true) } }
+                            Button("保留本地时间") { if let connection { resolve(connection.id, link.id, false) } }
                         }.disabled(working)
                     }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                 }
-                let messages = controller.messages.isEmpty ? connection.messages : controller.messages
+                let messages = controller.messages.isEmpty ? (connection?.messages ?? store.state.teachingConnections.flatMap { source in source.messages.map { message in
+                    var named = message; named.text = source.remoteTitle + " · " + message.text; return named
+                } }) : controller.messages
                 if messages.isEmpty {
-                    Label("点击更新，检查最新课件和作业。", systemImage: "arrow.clockwise").foregroundStyle(.secondary).padding(.top, 55)
+                    Label("检查课件和作业，确认清单后再更新。", systemImage: "arrow.clockwise").foregroundStyle(.secondary).padding(.top, 55)
                 } else {
                     ForEach(messages) { message in
                         Label(message.text, systemImage: message.isIssue ? "exclamationmark.circle" : "checkmark.circle")

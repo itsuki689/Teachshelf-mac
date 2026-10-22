@@ -64,9 +64,13 @@ struct WorkspaceToolbarActions: View {
                 }
                 Button("新建计划…", systemImage: "calendar.badge.plus") { store.startToolbarPlan() }
                 Divider()
+                Button("检查全部网站课程…", systemImage: "arrow.triangle.2.circlepath") {
+                    guard store.beforeLeavingMaterial?() != false else { return }
+                    store.teachingUpdateAll = true; store.teachingConnectionToOpen = nil; store.showingTeachingWebsite = true
+                }.disabled(store.state.teachingConnections.isEmpty)
                 Button("连接教学网站…", systemImage: "globe") {
                     guard store.beforeLeavingMaterial?() != false else { return }
-                    store.teachingConnectionToOpen = nil; store.showingTeachingWebsite = true
+                    store.teachingUpdateAll = false; store.teachingConnectionToOpen = nil; store.showingTeachingWebsite = true
                 }
             } label: {
                 Image(nsImage: colorScheme == .dark ? Self.darkPlusImage : Self.lightPlusImage)
