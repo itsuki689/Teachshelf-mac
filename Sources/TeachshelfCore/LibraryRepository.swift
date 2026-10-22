@@ -1906,9 +1906,10 @@ extension LibraryRepository {
         try commit { state in
             guard let index = state.courses.firstIndex(where: { $0.id == courseID }) else { throw LibraryError.missingRecord("课程") }
             if mode == .custom {
-                let previous = state.courses[index].materialSort ?? .time
+                let usesDefaultOrder = state.courses[index].materialSort == nil
+                let previous = state.courses[index].materialSort ?? .name
                 let records = state.materials.filter { $0.courseID == courseID }
-                for group in Dictionary(grouping: records, by: \.folderID).values where group.allSatisfy({ $0.customOrder == nil }) {
+                for group in Dictionary(grouping: records, by: \.folderID).values where usesDefaultOrder || group.allSatisfy({ $0.customOrder == nil }) {
                     for (rank, material) in MaterialOrdering.sorted(group, by: previous).enumerated() {
                         state.materials[state.materials.firstIndex { $0.id == material.id }!].customOrder = rank
                     }

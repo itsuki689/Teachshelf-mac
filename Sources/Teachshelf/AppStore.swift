@@ -276,7 +276,7 @@ private struct PlanUndo {
             return words.allSatisfy { text.localizedCaseInsensitiveContains($0) }
         }
         if let id = currentCourseID {
-            return MaterialOrdering.sorted(items, by: state.courses.first { $0.id == id }?.materialSort ?? .time)
+            return MaterialOrdering.sorted(items, by: state.courses.first { $0.id == id }?.materialSort ?? .name)
         }
         items.sort {
             switch sort {

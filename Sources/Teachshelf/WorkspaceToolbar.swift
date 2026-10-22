@@ -50,6 +50,17 @@ struct WorkspaceToolbarActions: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            Button {
+                guard store.beforeLeavingMaterial?() != false else { return }
+                store.teachingUpdateAll = true; store.teachingConnectionToOpen = nil; store.showingTeachingWebsite = true
+            } label: {
+                Label("全局更新", systemImage: "arrow.triangle.2.circlepath")
+                    .frame(width: diameter, height: diameter).contentShape(Circle())
+            }
+            .frame(width: diameter, height: diameter)
+            .help("检查所有已连接课程的网站更新")
+            .accessibilityIdentifier("workspace.update")
+            .disabled(store.state.teachingConnections.isEmpty)
             Button { store.chooseImport() } label: {
                 Label("导入资料", systemImage: "square.and.arrow.down")
                     .frame(width: diameter, height: diameter).contentShape(Circle())
@@ -64,10 +75,6 @@ struct WorkspaceToolbarActions: View {
                 }
                 Button("新建计划…", systemImage: "calendar.badge.plus") { store.startToolbarPlan() }
                 Divider()
-                Button("检查全部网站课程…", systemImage: "arrow.triangle.2.circlepath") {
-                    guard store.beforeLeavingMaterial?() != false else { return }
-                    store.teachingUpdateAll = true; store.teachingConnectionToOpen = nil; store.showingTeachingWebsite = true
-                }.disabled(store.state.teachingConnections.isEmpty)
                 Button("连接教学网站…", systemImage: "globe") {
                     guard store.beforeLeavingMaterial?() != false else { return }
                     store.teachingUpdateAll = false; store.teachingConnectionToOpen = nil; store.showingTeachingWebsite = true
@@ -84,8 +91,8 @@ struct WorkspaceToolbarActions: View {
             .accessibilityIdentifier("workspace.create")
         }
         .labelStyle(.iconOnly).buttonStyle(.plain).font(.system(size: 16))
-        // Two tangent circles: each action occupies one diameter of the capsule.
-        .frame(width: diameter * 2, height: diameter).fixedSize()
+        // Each action occupies one diameter; the outer actions share the capsule's round ends.
+        .frame(width: diameter * 3, height: diameter).fixedSize()
         .overlay {
             // Keep the toolbar's native glass; only reinforce its edge on light backdrops.
             if colorScheme == .light {

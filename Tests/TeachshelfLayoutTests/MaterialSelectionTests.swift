@@ -181,7 +181,7 @@ import TeachshelfCore
             #expect(store.materialBrowserRows.map(\.depth) == [0, 1, 2])
             #expect(store.expandedMaterialFolderIDs.isEmpty)
             store.search = ""
-            #expect(store.materialBrowserRows.map(\.id) == [outer.id, items[2].id, items[0].id])
+            #expect(store.materialBrowserRows.map(\.id) == [outer.id, items[0].id, items[2].id])
             store.navigate(to: .course(other.id))
             #expect(store.materialBrowserRows.count == 1)
             #expect(store.materialBrowserSelectableIDs.isEmpty)

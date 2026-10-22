@@ -14,7 +14,7 @@ struct MaterialDragPayload: Codable {
 }
 
 extension AppStore {
-    var materialSortMode: MaterialSortMode { state.courses.first { $0.id == currentCourseID }?.materialSort ?? .time }
+    var materialSortMode: MaterialSortMode { state.courses.first { $0.id == currentCourseID }?.materialSort ?? .name }
     var canReorderMaterials: Bool { currentCourseID != nil && materialSortMode == .custom }
     var selectedVisibleMaterialIDs: Set<UUID> { selectedMaterialIDs.intersection(materialBrowserSelectableIDs) }
     var currentMaterialFolders: [MaterialFolder] {
