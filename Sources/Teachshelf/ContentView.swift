@@ -142,8 +142,6 @@ struct ContentView: View {
                     }
                 }.padding(.horizontal, 14).padding(.bottom, 12)
             }.scrollIndicators(.hidden).frame(maxHeight: .infinity)
-            Divider().padding(.horizontal, 20)
-            navRow("设置", "gearshape", .settings).padding(.horizontal, 14).padding(.vertical, 12)
         }
         .focusable().focusEffectDisabled()
         .onKeyPress(.downArrow) { moveSidebar(1); return .handled }
@@ -164,7 +162,7 @@ struct ContentView: View {
 
     private func moveSidebar(_ offset: Int) {
         let destinations: [SidebarSelection] = [.all, .favorites, .recent, .unassigned, .homework, .tasks, .schedule]
-            + store.sidebarCourses.map { .course($0.id) } + [.settings]
+            + store.sidebarCourses.map { .course($0.id) }
         let index = store.navigation.flatMap { destinations.firstIndex(of: $0) } ?? 0
         store.navigate(to: destinations[min(max(index + offset, 0), destinations.count - 1)])
     }

@@ -16,7 +16,8 @@ struct WorkspaceAppearanceToolbarItem: ToolbarContent {
                 AppearanceModeToggle(width: 72)
                     .accessibilityIdentifier("workspace.appearance")
             }
-            .frame(width: 72, height: 36).fixedSize()
+            // Reserve 48 points after the toggle so it and the native search sit farther left.
+            .frame(width: 120, height: 36, alignment: .leading).fixedSize()
         }
     }
 }
@@ -26,6 +27,8 @@ struct WorkspaceToolbarActions: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.controlActiveState) private var activeState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ViewState private var settingsRotation: Double = 0
 
     private let diameter: CGFloat = 36
 
@@ -61,6 +64,20 @@ struct WorkspaceToolbarActions: View {
             .help("检查所有已连接课程的网站更新")
             .accessibilityIdentifier("workspace.update")
             .disabled(store.state.teachingConnections.isEmpty)
+            Button {
+                store.navigate(to: .settings)
+                guard store.navigation == .settings, !reduceMotion else { return }
+                settingsRotation += 360
+            } label: {
+                Image(systemName: "gearshape")
+                    .rotationEffect(.degrees(settingsRotation))
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.42), value: settingsRotation)
+                    .frame(width: diameter, height: diameter).contentShape(Circle())
+            }
+            .frame(width: diameter, height: diameter)
+            .help("设置")
+            .accessibilityLabel("设置")
+            .accessibilityIdentifier("workspace.settings")
             Button { store.chooseImport() } label: {
                 Label("导入资料", systemImage: "square.and.arrow.down")
                     .frame(width: diameter, height: diameter).contentShape(Circle())
@@ -92,7 +109,7 @@ struct WorkspaceToolbarActions: View {
         }
         .labelStyle(.iconOnly).buttonStyle(.plain).font(.system(size: 16))
         // Each action occupies one diameter; the outer actions share the capsule's round ends.
-        .frame(width: diameter * 3, height: diameter).fixedSize()
+        .frame(width: diameter * 4, height: diameter).fixedSize()
         .overlay {
             // Keep the toolbar's native glass; only reinforce its edge on light backdrops.
             if colorScheme == .light {
