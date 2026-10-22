@@ -27,7 +27,7 @@ struct DayNightToggle: View {
             TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !shouldAnimate)) { timeline in
                 DayNightArtwork(isDark: isDark,
                                 elapsed: shouldAnimate ? timeline.date.timeIntervalSince(startedAt) : 0)
-                    .animation(reduceMotion ? nil : .timingCurve(0.65, 0, 0.34, 1.17, duration: 1), value: isDark)
+                    .animation(reduceMotion ? nil : .timingCurve(0.25, 0.8, 0.35, 1.08, duration: 0.65), value: isDark)
                     .frame(width: 250, height: 100)
                     .scaleEffect(width / 250, anchor: .topLeading)
                     .frame(width: width, height: width * 0.4, alignment: .topLeading)
@@ -36,6 +36,7 @@ struct DayNightToggle: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .background(AppearanceLiveRegion())
         .onAppear { startedAt = Date(); isVisible = true }
         .onDisappear { isVisible = false }
         .help(isDark ? "切换到浅色模式" : "切换到深色模式")

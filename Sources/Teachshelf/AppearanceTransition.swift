@@ -62,12 +62,12 @@ import QuartzCore
             let overlay = SnapshotView(frame: root.bounds)
             overlay.image = image
             root.addSubview(overlay, positioned: .above, relativeTo: nil)
+            overlay.updateLiveRegions(in: root)
             frames.append(Frame(window: window, overlay: overlay, size: window.frame.size))
         }
         changes()
         guard !frames.isEmpty else { return }
-        // Let the new native appearance and SwiftUI colors render under the old image first.
-        startedAt = clock() + 1.0 / 30
+        startedAt = clock()
         let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.advance() }
         }
@@ -81,11 +81,12 @@ import QuartzCore
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         frames.removeAll { frame in
-            guard let window = frame.window, window.frame.size == frame.size,
-                  window.contentView != nil, frame.overlay.superview != nil, progress < 1 else {
+            guard let window = frame.window, let root = frame.overlay.superview,
+                  window.frame.size == frame.size, window.contentView != nil, progress < 1 else {
                 frame.overlay.removeFromSuperview()
                 return true
             }
+            frame.overlay.updateLiveRegions(in: root)
             frame.overlay.alphaValue = 1 - eased
             return false
         }
@@ -99,10 +100,12 @@ import QuartzCore
         frames.removeAll()
     }
 
-    final class SnapshotView: NSImageView {
+    final class SnapshotView: NSView {
+        var image: NSImage? { didSet { needsDisplay = true } }
+        private(set) var liveRects: [NSRect] = []
+
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
-            imageScaling = .scaleAxesIndependently
             wantsLayer = true
             setAccessibilityElement(false)
             setAccessibilityHidden(true)
@@ -110,5 +113,24 @@ import QuartzCore
         required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
         override var acceptsFirstResponder: Bool { false }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        func updateLiveRegions(in root: NSView) {
+            let rects = AppearanceLiveRegion.rectangles(in: root).map { convert($0, from: root) }
+            guard rects != liveRects else { return }
+            liveRects = rects; needsDisplay = true
+        }
+
+        override func draw(_ dirtyRect: NSRect) {
+            guard let image, let context = NSGraphicsContext.current?.cgContext else { return }
+            context.saveGState()
+            let path = CGMutablePath()
+            path.addRect(bounds)
+            for rect in liveRects {
+                path.addRoundedRect(in: rect, cornerWidth: rect.height / 2, cornerHeight: rect.height / 2)
+            }
+            context.addPath(path); context.clip(using: .evenOdd)
+            image.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            context.restoreGState()
+        }
     }
 }
