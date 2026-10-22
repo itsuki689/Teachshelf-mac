@@ -823,17 +823,7 @@ public final class LibraryRepository: @unchecked Sendable {
 
     public func saveAppearance(_ value: String) throws {
         guard ["system", "light", "dark"].contains(value) else { throw LibraryError.invalidInput("未知的外观设置。") }
-        try withLock {
-            guard snapshot.appearance != value else { return }
-            // A preference cannot change paths or relationships in the validated
-            // snapshot. Finish any pending file journal, then save atomically
-            // without rescanning and reorganizing every course and material.
-            try recoverMaterialRelocation()
-            var next = snapshot
-            next.appearance = value
-            try persist(next)
-            snapshot = next
-        }
+        try commit { $0.appearance = value }
     }
 
     public func saveAccentColor(_ value: String) throws {
