@@ -29,7 +29,7 @@ struct AppearanceSettingsControl: View {
     }
 
     private func save(_ value: String) {
-        store.perform { try store.repository.saveAppearance(value) }
+        do { try store.setAppearance(value) } catch { store.report(error) }
     }
 }
 
@@ -66,6 +66,6 @@ struct AppearanceModeToggle: View {
     }
 
     private func save(_ value: String) {
-        store.perform { try store.repository.saveAppearance(value) }
+        do { try store.setAppearance(value) } catch { store.report(error) }
     }
 }

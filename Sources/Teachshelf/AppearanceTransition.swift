@@ -51,7 +51,13 @@ import QuartzCore
         let snapshots = windows.compactMap { window -> (NSWindow, NSView, NSImage)? in
             guard let root = window.contentView?.superview ?? window.contentView,
                   root.bounds.width > 0, root.bounds.height > 0,
-                  let bitmap = root.bitmapImageRepForCachingDisplay(in: root.bounds) else { return nil }
+                  let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil,
+                      pixelsWide: Int(ceil(root.bounds.width)), pixelsHigh: Int(ceil(root.bounds.height)),
+                      bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                      colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+            // The old image is only a short-lived fade layer. Capturing at one pixel
+            // per point avoids a full Retina rasterization before the control can move.
+            bitmap.size = root.bounds.size
             root.cacheDisplay(in: root.bounds, to: bitmap)
             let image = NSImage(size: root.bounds.size)
             image.addRepresentation(bitmap)

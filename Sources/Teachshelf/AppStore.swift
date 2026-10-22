@@ -315,6 +315,13 @@ private struct PlanUndo {
         alert.runModal()
     }
     func perform(_ action: () throws -> Void) { guard !isBusy else { return }; do { try action(); reload() } catch { report(error) } }
+    func setAppearance(_ value: String) throws {
+        guard !isBusy else { return }
+        try repository.saveAppearance(value)
+        // Publish only after persistence succeeds. Appearance does not require
+        // reconciling the current file selection, filters, or navigation history.
+        if state.appearance != value { state.appearance = value }
+    }
     func runOperation(_ label: String, operation: @escaping @Sendable () throws -> String) async {
         guard !isBusy else { return }
         isBusy = true; status = label
