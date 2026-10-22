@@ -16,7 +16,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     }
     var subtitle: String {
         switch self {
-        case .appearance: return "显示模式、强调色与课程标记"
+        case .appearance: return "显示模式、明暗过渡与个性配色"
         case .library: return "查看资料库位置，或切换到其他资料库"
         case .backup: return "导出完整备份，或从已有备份恢复"
         case .about: return "课屿版本与文件管理说明"
@@ -115,7 +115,7 @@ struct SettingsWorkspace: View {
     @ViewState private var accentSession: AccentEditingSession?
 
     private var section: SettingsSection { SettingsSection(rawValue: selectedSection) ?? .appearance }
-    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.8.7" }
+    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.8.8" }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -157,7 +157,11 @@ struct SettingsWorkspace: View {
         VStack(alignment: .leading, spacing: 14) {
             SettingsPanel {
                 AppearanceSettingsControl().padding(18)
-                panelDivider
+            }.disabled(store.isBusy)
+            SettingsPanel {
+                AppearanceTransitionSettingsControl()
+            }.disabled(store.isBusy)
+            SettingsPanel {
                 SettingsControlRow("强调色", detail: "按钮、选中项与重点信息") {
                     HStack(spacing: 10) {
                         RoundedRectangle(cornerRadius: 6).fill(Color(hex: store.effectiveAccentHex))

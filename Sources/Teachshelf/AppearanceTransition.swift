@@ -1,7 +1,8 @@
 import AppKit
 import QuartzCore
+import TeachshelfCore
 
-/// Cover the native window before changing appearance, then reveal it from the bottom.
+/// Cover the native window before changing appearance, then reveal it from the opposite edge.
 @MainActor final class AppearanceTransition {
     static let shared = AppearanceTransition()
 
@@ -19,23 +20,25 @@ import QuartzCore
     private var pendingChanges: (() -> Void)?
     private var requestedMode: String?
     private var requestGeneration: UInt = 0
-    private let duration: TimeInterval
+    private let baseDuration: TimeInterval
+    private var duration: TimeInterval
+    private var settings: AppearanceTransitionSettings = .default
     private let clock: () -> TimeInterval
 
     init(duration: TimeInterval = 0.74, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
-        self.duration = max(0.01, duration)
+        let duration = max(0.01, duration)
+        self.baseDuration = duration
+        self.duration = duration
         self.clock = clock
     }
 
     deinit { timer?.invalidate() }
 
-    func apply(_ mode: String, animated: Bool) {
+    func apply(_ mode: String, settings: AppearanceTransitionSettings = .default, animated: Bool) {
         let normalized = ["light", "dark"].contains(mode) ? mode : "system"
         let appearance: NSAppearance? = normalized == "system" ? nil
             : NSAppearance(named: normalized == "dark" ? .darkAqua : .aqua)
-        let windows = NSApp.windows.filter {
-            $0.isVisible && !$0.isMiniaturized && $0.alphaValue > 0 && $0.level == .normal
-        }
+        let windows = Self.normalWindows()
         let motionAllowed = NSApp.isActive && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if phase != nil, requestedMode == normalized, motionAllowed {
             // A new scene's onAppear may be non-animated. Join it to the existing
@@ -55,10 +58,27 @@ import QuartzCore
         guard requestedMode != normalized else { return }
         guard phase != nil || NSApp.appearance?.name != appearance?.name else { return }
         requestedMode = normalized
-        transition(in: windows) { NSApp.appearance = appearance }
+        transition(in: windows, settings: settings) { NSApp.appearance = appearance }
     }
 
-    func transition(in windows: [NSWindow], changes: @escaping () -> Void) {
+    /// Preview the mask without changing appearance or replacing an in-flight request.
+    func preview(settings: AppearanceTransitionSettings) {
+        guard phase == nil, NSApp.isActive, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        switch NSApp.appearance?.name {
+        case .darkAqua: requestedMode = "dark"
+        case .aqua: requestedMode = "light"
+        default: requestedMode = "system"
+        }
+        transition(in: Self.normalWindows(), settings: settings) {}
+    }
+
+    func transition(in windows: [NSWindow], settings value: AppearanceTransitionSettings = .default, changes: @escaping () -> Void) {
+        if phase == nil {
+            // Freeze a cycle's palette and timing, including any reversal. Settings
+            // edited behind the mask take effect on the next complete cycle.
+            settings = value.isValid ? value : .default
+            duration = baseDuration / settings.speed
+        }
         requestGeneration &+= 1
         pendingChanges = changes
         synchronizeFrames(in: windows)
@@ -95,7 +115,7 @@ import QuartzCore
         let reference = frames.first?.overlay
         for window in windows {
             guard !frames.contains(where: { $0.window === window }), let root = Self.root(of: window) else { continue }
-            let overlay = BlockOverlay(frame: root.bounds)
+            let overlay = BlockOverlay(frame: root.bounds, settings: settings)
             if let reference { overlay.synchronize(with: reference) }
             else if case .holding = phase { overlay.cover() }
             root.addSubview(overlay, positioned: .above, relativeTo: nil)
@@ -167,12 +187,25 @@ import QuartzCore
         return root.bounds.width > 0 && root.bounds.height > 0 ? root : nil
     }
 
+    private static func normalWindows() -> [NSWindow] {
+        NSApp.windows.filter { $0.isVisible && !$0.isMiniaturized && $0.alphaValue > 0 && $0.level == .normal }
+    }
+
     final class BlockOverlay: NSView {
         private static let count = 10
         private(set) var opacities = Array(repeating: CGFloat.zero, count: count)
         private var coveringFrom = Array(repeating: CGFloat.zero, count: count)
+        private let direction: AppearanceTransitionDirection
+        private let colors: [NSColor]
 
-        override init(frame frameRect: NSRect) {
+        init(frame frameRect: NSRect, settings: AppearanceTransitionSettings) {
+            direction = settings.direction
+            let hexes = settings.colorMode == .rainbow ? AppearanceTransitionSettings.rainbowHexes
+                : Array(repeating: settings.colorHex, count: Self.count)
+            colors = hexes.map { hex in
+                let rgb = RGBColor(hex: hex) ?? RGBColor(hex: "#808080")!
+                return NSColor(srgbRed: CGFloat(rgb.red), green: CGFloat(rgb.green), blue: CGFloat(rgb.blue), alpha: 1)
+            }
             super.init(frame: frameRect)
             wantsLayer = true
             autoresizingMask = [.width, .height]
@@ -212,13 +245,17 @@ import QuartzCore
             return CGFloat(1 - pow(1 - local, 3))
         }
         override func draw(_ dirtyRect: NSRect) {
-            let height = bounds.height / CGFloat(Self.count)
+            let horizontal = direction == .left || direction == .right
+            let step = (horizontal ? bounds.width : bounds.height) / CGFloat(Self.count)
+            let reversed = direction == .bottom || direction == .right
             for index in 0..<Self.count where opacities[index] > 0 {
-                let white = 0.54 - 0.07 * CGFloat(index) / CGFloat(Self.count - 1)
-                NSColor(calibratedWhite: white, alpha: opacities[index]).setFill()
+                colors[index].withAlphaComponent(opacities[index]).setFill()
+                let slot = CGFloat(reversed ? Self.count - 1 - index : index)
                 // Overlap adjacent edges so fractional Retina rows cannot leave seams.
-                NSRect(x: bounds.minX, y: bounds.minY + CGFloat(index) * height,
-                       width: bounds.width, height: height + 1).fill()
+                let rect = horizontal
+                    ? NSRect(x: bounds.minX + slot * step, y: bounds.minY, width: step + 1, height: bounds.height)
+                    : NSRect(x: bounds.minX, y: bounds.minY + slot * step, width: bounds.width, height: step + 1)
+                rect.fill()
             }
         }
     }

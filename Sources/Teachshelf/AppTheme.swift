@@ -60,9 +60,9 @@ private struct AppAppearanceModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onAppear { AppearanceTransition.shared.apply(store.state.appearance, animated: false) }
+            .onAppear { AppearanceTransition.shared.apply(store.state.appearance, settings: store.state.appearanceTransition, animated: false) }
             .onChange(of: store.state.appearance) { _, mode in
-                AppearanceTransition.shared.apply(mode, animated: true)
+                AppearanceTransition.shared.apply(mode, settings: store.state.appearanceTransition, animated: true)
             }
     }
 }

@@ -75,7 +75,7 @@ import TeachshelfCore
         #expect(try isGray(sample(content, in: root, at: 0.88)))
 
         now = 0.75; transition.advance()
-        #expect(try isGray(sample(content, in: root, at: 0.88)))
+        #expect(try isGray(sample(content, in: root, at: 0.98)))
         #expect(try sample(content, in: root, at: 0.12).redComponent < 0.1)
 
         now = 1.01; transition.advance()
@@ -255,7 +255,7 @@ import TeachshelfCore
         now = 0.5; transition.advance()
         now = 0.75; transition.advance()
         for (content, root) in [(firstContent, firstRoot), (secondContent, secondRoot)] {
-            #expect(try isGray(sample(content, in: root, at: 0.88)))
+            #expect(try isGray(sample(content, in: root, at: 0.98)))
             #expect(try sample(content, in: root, at: 0.12).redComponent < 0.1)
         }
         now = 1.01; transition.advance()
@@ -286,6 +286,162 @@ import TeachshelfCore
         #expect(applied == ["latest", "missing-root", "no-windows"])
     }
 
+    @Test(arguments: AppearanceTransitionDirection.allCases)
+    func eachDirectionCoversFromItsChosenEdgeAndRevealsFromTheOppositeEdge(direction: AppearanceTransitionDirection) throws {
+        let (window, content, root) = makeWindow()
+        defer { window.close() }
+        var settings = AppearanceTransitionSettings.default
+        settings.direction = direction; settings.colorHex = "#4080C0"
+        let expected = try color(hex: settings.colorHex)
+        var now: TimeInterval = 0
+        var changes = 0
+        let transition = AppearanceTransition(duration: 1, clock: { now })
+        defer { transition.finish() }
+        transition.transition(in: [window], settings: settings) { changes += 1; content.color = .black }
+
+        now = 0.2; transition.advance()
+        #expect(changes == 0)
+        #expect(try matches(sample(content, in: root, from: direction, at: 0.02), expected))
+        #expect(try sample(content, in: root, from: direction, at: 0.98).redComponent > 0.9)
+
+        now = 0.4; transition.advance()
+        #expect(changes == 1)
+        for fraction in [CGFloat(0.02), 0.5, 0.98] {
+            #expect(try matches(sample(content, in: root, from: direction, at: fraction), expected))
+        }
+        now = 0.5; transition.advance()
+        now = 0.7; transition.advance()
+        #expect(try matches(sample(content, in: root, from: direction, at: 0.02), expected))
+        let revealed = try sample(content, in: root, from: direction, at: 0.98)
+        #expect(revealed.redComponent < 0.1 && revealed.greenComponent < 0.1 && revealed.blueComponent < 0.1)
+
+        now = 1.01; transition.advance()
+        #expect(overlays(in: root).isEmpty)
+        #expect(changes == 1)
+    }
+
+    @Test func anExplicitSRGBDrawingContextPreservesSolidViewAndOverlayColors() throws {
+        let (window, content, root) = makeWindow()
+        defer { window.close() }
+        let expected = try color(hex: "#4080C0")
+        let point = root.convert(NSPoint(x: content.bounds.midX, y: content.bounds.midY), from: content)
+        content.color = expected
+        let ordinaryView = try pixel(at: point, in: root)
+        #expect(matches(ordinaryView, expected))
+
+        var settings = AppearanceTransitionSettings.default
+        settings.colorHex = "#4080C0"
+        var now: TimeInterval = 0
+        let transition = AppearanceTransition(duration: 1, clock: { now })
+        defer { transition.finish() }
+        transition.transition(in: [window], settings: settings) { content.color = .black }
+        now = 0.4; transition.advance()
+        let opaqueOverlay = try pixel(at: point, in: root)
+        #expect(matches(opaqueOverlay, ordinaryView))
+        #expect(matches(opaqueOverlay, expected))
+    }
+
+    @Test(arguments: AppearanceTransitionDirection.allCases)
+    func rainbowUsesTenOpaqueColorsInOrderFromTheSelectedEdge(direction: AppearanceTransitionDirection) throws {
+        let (window, content, root) = makeWindow()
+        defer { window.close() }
+        var settings = AppearanceTransitionSettings.default
+        settings.direction = direction; settings.colorMode = .rainbow
+        // A retained custom single color must not tint the rainbow palette.
+        settings.colorHex = "#202020"
+        var now: TimeInterval = 0
+        let transition = AppearanceTransition(duration: 1, clock: { now })
+        defer { transition.finish() }
+        transition.transition(in: [window], settings: settings) { content.color = .black }
+        now = 0.4; transition.advance()
+        #expect(AppearanceTransitionSettings.rainbowHexes.count == 10)
+        let covered = try orderedBandColors(in: root, from: direction)
+        for (actual, hex) in zip(covered, AppearanceTransitionSettings.rainbowHexes) {
+            #expect(try matches(actual, color(hex: hex)))
+        }
+        now = 0.5; transition.advance()
+        now = 1.01; transition.advance()
+        #expect(overlays(in: root).isEmpty)
+    }
+
+    @Test(arguments: [0.5, 2.0])
+    func speedScalesTheEntireCoverHoldAndRevealWithoutChangingTheirOrder(speed: Double) throws {
+        let (window, content, root) = makeWindow()
+        defer { window.close() }
+        var settings = AppearanceTransitionSettings.default
+        settings.speed = speed
+        let total = 1 / speed
+        var now: TimeInterval = 0
+        var changes = 0
+        let transition = AppearanceTransition(duration: 1, clock: { now })
+        defer { transition.finish() }
+        transition.transition(in: [window], settings: settings) { changes += 1; content.color = .black }
+
+        now = total * 0.39; transition.advance()
+        #expect(changes == 0)
+        now = total * 0.4; transition.advance()
+        #expect(changes == 1)
+        #expect(try isGray(sample(content, in: root, at: 0.12)))
+        now = total * 0.5; transition.advance()
+        now = total * 0.7; transition.advance()
+        #expect(try isGray(sample(content, in: root, at: 0.98)))
+        #expect(try sample(content, in: root, at: 0.02).redComponent < 0.1)
+        now = total * 0.99; transition.advance()
+        #expect(overlays(in: root).count == 1)
+        now = total * 1.01; transition.advance()
+        #expect(overlays(in: root).isEmpty)
+        #expect(changes == 1)
+    }
+
+    @Test func changedSettingsWaitForTheNextIdleCycleEvenWhenTheCurrentRequestIsReversed() throws {
+        let (window, content, root) = makeWindow()
+        defer { window.close() }
+        var original = AppearanceTransitionSettings.default
+        original.colorHex = "#4080C0"
+        var edited = AppearanceTransitionSettings.default
+        edited.direction = .right; edited.speed = 2; edited.colorMode = .rainbow
+        let expected = try color(hex: original.colorHex)
+        var now: TimeInterval = 0
+        var applied: [String] = []
+        let transition = AppearanceTransition(duration: 1, clock: { now })
+        defer { transition.finish() }
+        transition.transition(in: [window], settings: original) { applied.append("superseded"); content.color = .black }
+        now = 0.2; transition.advance()
+        let before = try sample(content, in: root, from: .top, at: 0.02)
+        transition.transition(in: [window], settings: edited) { applied.append("dark"); content.color = .black }
+        #expect(try matches(sample(content, in: root, from: .top, at: 0.02), before))
+        now = 0.4; transition.advance()
+        #expect(applied == ["dark"])
+        for actual in try orderedBandColors(in: root, from: .top) { #expect(matches(actual, expected)) }
+        now = 0.5; transition.advance()
+        now = 0.7; transition.advance()
+        let revealing = try orderedBandColors(in: root, from: .top)
+        transition.transition(in: [window], settings: edited) { applied.append("reversed"); content.color = .white }
+        for (actual, previous) in zip(try orderedBandColors(in: root, from: .top), revealing) {
+            #expect(matches(actual, previous))
+        }
+        now = 1.11; transition.advance()
+        #expect(applied == ["dark", "reversed"])
+        for actual in try orderedBandColors(in: root, from: .top) { #expect(matches(actual, expected)) }
+        now = 1.22; transition.advance()
+        now = 1.73; transition.advance()
+        #expect(overlays(in: root).isEmpty)
+
+        let start = now
+        transition.transition(in: [window], settings: edited) { applied.append("next"); content.color = .black }
+        now = start + 0.1; transition.advance()
+        #expect(try matches(sample(content, in: root, from: .right, at: 0.02), color(hex: AppearanceTransitionSettings.rainbowHexes[0])))
+        #expect(try sample(content, in: root, from: .right, at: 0.98).redComponent > 0.9)
+        now = start + 0.201; transition.advance()
+        #expect(applied == ["dark", "reversed", "next"])
+        for (actual, hex) in zip(try orderedBandColors(in: root, from: .right), AppearanceTransitionSettings.rainbowHexes) {
+            #expect(try matches(actual, color(hex: hex)))
+        }
+        now = start + 0.26; transition.advance()
+        now = start + 0.52; transition.advance()
+        #expect(overlays(in: root).isEmpty)
+    }
+
     private func makeWindow(size: NSSize = NSSize(width: 320, height: 200)) -> (NSWindow, ColorView, NSView) {
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
@@ -303,20 +459,60 @@ import TeachshelfCore
 
     private func sample(_ content: NSView, in root: NSView, at fraction: CGFloat) throws -> NSColor {
         let point = root.convert(NSPoint(x: content.bounds.midX, y: content.bounds.height * fraction), from: content)
-        let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
-        root.cacheDisplay(in: root.bounds, to: bitmap)
-        let x = Int((point.x - root.bounds.minX) / root.bounds.width * CGFloat(bitmap.pixelsWide))
-        let y = Int((root.bounds.maxY - point.y) / root.bounds.height * CGFloat(bitmap.pixelsHigh))
-        return try #require(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+        return try pixel(at: point, in: root)
+    }
+
+    private func sample(_ content: NSView, in root: NSView, from direction: AppearanceTransitionDirection, at fraction: CGFloat) throws -> NSColor {
+        let point = root.convert(point(in: content.bounds, from: direction, at: fraction), from: content)
+        return try pixel(at: point, in: root)
+    }
+
+    private func point(in bounds: NSRect, from direction: AppearanceTransitionDirection, at fraction: CGFloat) -> NSPoint {
+        switch direction {
+        case .top: return NSPoint(x: bounds.midX, y: bounds.maxY - bounds.height * fraction)
+        case .bottom: return NSPoint(x: bounds.midX, y: bounds.minY + bounds.height * fraction)
+        case .left: return NSPoint(x: bounds.minX + bounds.width * fraction, y: bounds.midY)
+        case .right: return NSPoint(x: bounds.maxX - bounds.width * fraction, y: bounds.midY)
+        }
+    }
+
+    private func pixel(at point: NSPoint, in root: NSView) throws -> NSColor {
+        // AppKit's display cache can return Color LCD bytes tagged as Generic RGB.
+        // Draw into a known sRGB destination so palette checks do not depend on the display profile.
+        let width = Int(ceil(root.bounds.width)), height = Int(ceil(root.bounds.height))
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                             bytesPerRow: width * 4, space: space,
+                                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.translateBy(x: -root.bounds.minX, y: -root.bounds.minY)
+        let graphics = NSGraphicsContext(cgContext: context, flipped: false)
+        root.displayIgnoringOpacity(root.bounds, in: graphics)
+        let data = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+        let x = Int(point.x - root.bounds.minX), y = height - 1 - Int(point.y - root.bounds.minY)
+        let offset = y * context.bytesPerRow + x * 4
+        return NSColor(srgbRed: CGFloat(data[offset]) / 255, green: CGFloat(data[offset + 1]) / 255,
+                       blue: CGFloat(data[offset + 2]) / 255, alpha: CGFloat(data[offset + 3]) / 255)
+    }
+
+    private func orderedBandColors(in root: NSView, from direction: AppearanceTransitionDirection) throws -> [NSColor] {
+        try (0..<10).map { index in
+            try pixel(at: point(in: root.bounds, from: direction, at: (CGFloat(index) + 0.5) / 10), in: root)
+        }
+    }
+
+    private func color(hex: String) throws -> NSColor {
+        let value = try #require(RGBColor(hex: hex))
+        return NSColor(srgbRed: value.red, green: value.green, blue: value.blue, alpha: 1)
+    }
+
+    private func matches(_ actual: NSColor, _ expected: NSColor) -> Bool {
+        abs(actual.redComponent - expected.redComponent) < 0.025
+            && abs(actual.greenComponent - expected.greenComponent) < 0.025
+            && abs(actual.blueComponent - expected.blueComponent) < 0.025
     }
 
     private func bandColors(in root: NSView) throws -> [NSColor] {
-        let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
-        root.cacheDisplay(in: root.bounds, to: bitmap)
-        return try (0..<10).map { index in
-            let y = Int((CGFloat(index) + 0.5) / 10 * CGFloat(bitmap.pixelsHigh))
-            return try #require(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: y)?.usingColorSpace(.sRGB))
-        }
+        try orderedBandColors(in: root, from: .top)
     }
 
     private func isGray(_ color: NSColor) -> Bool {
