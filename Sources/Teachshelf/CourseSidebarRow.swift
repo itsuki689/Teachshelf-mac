@@ -27,7 +27,7 @@ struct CourseSidebarRow: View {
     }
 
     private var showsCount: Bool { isHovered || isSelected }
-    private var countWidth: CGFloat { max(30, CGFloat(String(count).count) * 9 + 12) }
+    private let countWidth: CGFloat = 25
 
     var body: some View {
         HStack(spacing: 0) {
@@ -79,7 +79,7 @@ struct CourseSidebarRow: View {
                 Color(hex: course.colorHex).opacity(theme.isDark ? 0.24 : 0.16)
                 Rectangle().fill(Color(hex: course.colorHex)).frame(width: 2)
                 Text("\(count)")
-                    .font(.system(size: 15, weight: .medium).monospacedDigit())
+                    .font(.system(size: 10, weight: .medium).monospacedDigit())
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
