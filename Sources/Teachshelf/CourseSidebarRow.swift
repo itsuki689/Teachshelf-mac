@@ -27,7 +27,7 @@ struct CourseSidebarRow: View {
     }
 
     private var showsCount: Bool { isHovered || isSelected }
-    private var countWidth: CGFloat { max(40, CGFloat(String(count).count) * 7 + 20) }
+    private var countWidth: CGFloat { max(30, CGFloat(String(count).count) * 9 + 12) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -50,7 +50,7 @@ struct CourseSidebarRow: View {
                 }
                 .fontWeight(isSelected ? .semibold : .regular)
                 // Reserve the panel's space so the title never reflows on hover.
-                .padding(.trailing, countWidth + 8)
+                .padding(.trailing, countWidth + 5)
                 .frame(maxWidth: .infinity, minHeight: 38, maxHeight: 38)
                 .contentShape(Rectangle())
             }
@@ -79,7 +79,7 @@ struct CourseSidebarRow: View {
                 Color(hex: course.colorHex).opacity(theme.isDark ? 0.24 : 0.16)
                 Rectangle().fill(Color(hex: course.colorHex)).frame(width: 2)
                 Text("\(count)")
-                    .font(.caption.monospacedDigit().weight(.medium))
+                    .font(.system(size: 15, weight: .medium).monospacedDigit())
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
