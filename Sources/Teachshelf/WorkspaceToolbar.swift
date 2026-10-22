@@ -65,8 +65,14 @@ struct WorkspaceToolbarActions: View {
             .accessibilityIdentifier("workspace.update")
             .disabled(store.state.teachingConnections.isEmpty)
             Button {
-                store.navigate(to: .settings)
-                guard store.navigation == .settings, !reduceMotion else { return }
+                let previousLocation = store.workspaceLocation
+                if store.navigation == .settings {
+                    if store.canGoBack { store.goBack() }
+                    else { store.navigate(to: .all) }
+                } else {
+                    store.navigate(to: .settings)
+                }
+                guard store.workspaceLocation != previousLocation, !reduceMotion else { return }
                 settingsRotation += 360
             } label: {
                 Image(systemName: "gearshape")
@@ -75,8 +81,8 @@ struct WorkspaceToolbarActions: View {
                     .frame(width: diameter, height: diameter).contentShape(Circle())
             }
             .frame(width: diameter, height: diameter)
-            .help("设置")
-            .accessibilityLabel("设置")
+            .help(store.navigation == .settings ? "关闭设置，返回上一页面" : "设置")
+            .accessibilityLabel(store.navigation == .settings ? "关闭设置" : "设置")
             .accessibilityIdentifier("workspace.settings")
             Button { store.chooseImport() } label: {
                 Label("导入资料", systemImage: "square.and.arrow.down")
