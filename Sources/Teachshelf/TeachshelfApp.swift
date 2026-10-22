@@ -55,12 +55,29 @@ import AppKit
 
 @MainActor final class TeachshelfAppDelegate: NSObject, NSApplicationDelegate {
     weak var store: AppStore?
+    private var waitingToQuit = false
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if store?.isBusy == true {
             let alert = NSAlert(); alert.messageText = "正在处理文件"; alert.informativeText = "请等待当前操作完成后退出。"; alert.runModal()
             return .terminateCancel
         }
-        return store?.beforeLeavingMaterial?() == false ? .terminateCancel : .terminateNow
+        guard store?.beforeLeavingMaterial?() != false else { return .terminateCancel }
+        guard let store else { return .terminateNow }
+        waitingToQuit = true
+        Task { [weak self] in
+            await store.flushTeachingLogin()
+            self?.finishQuit(sender)
+        }
+        // A stalled WebKit cookie process must not prevent an otherwise safe quit.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            self?.finishQuit(sender)
+        }
+        return .terminateLater
+    }
+    private func finishQuit(_ sender: NSApplication) {
+        guard waitingToQuit else { return }
+        waitingToQuit = false; sender.reply(toApplicationShouldTerminate: true)
     }
 }
 

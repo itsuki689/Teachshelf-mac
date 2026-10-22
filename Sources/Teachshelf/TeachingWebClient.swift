@@ -3,10 +3,11 @@ import WebKit
 import TeachshelfCore
 
 enum TeachingWebError: LocalizedError {
-    case login, timeout, unreadable, blocked, download, directFile(URL, String)
+    case login, accountMismatch, timeout, unreadable, blocked, download, directFile(URL, String)
     var errorDescription: String? {
         switch self {
         case .login: return "登录已失效或账号无法识别，请在官方网页完成登录后重试。"
+        case .accountMismatch: return "当前网站账号与课程绑定账号不同，请在官方网页切换到原账号，或断开连接后重新绑定。"
         case .timeout: return "网站响应超时，请检查网络后重试。"
         case .unreadable: return "页面尚未加载完整或结构无法识别，本次未更新该项目。"
         case .blocked: return "该链接不属于支持的教学网站页面。"
@@ -25,12 +26,14 @@ enum TeachingWebError: LocalizedError {
     func cancel()
 }
 
-/// Uses WebKit's own session and download transport. No credentials or cookies leave WebKit.
+/// Uses WebKit's session and download transport; optional session restoration uses the local keychain.
 @MainActor final class TeachingWebClient: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, TeachingWebsiteTransport {
     let webView: WKWebView
+    let loginSession: TeachingLoginSession
     @Published private(set) var loading = false
     @Published private(set) var address = ""
     @Published private(set) var notice = "在官方页面手动完成登录，然后读取课程。"
+    @Published private(set) var loginState: TeachingLoginState = .unknown
     private var continuation: CheckedContinuation<Void, Error>?
     private var downloadContinuation: CheckedContinuation<URL, Error>?
     private var loadTimeout: Task<Void, Never>?
@@ -42,11 +45,15 @@ enum TeachingWebError: LocalizedError {
     private var loadGeneration: UUID?
     private var closed = false
     private var currentNavigation: WKNavigation?
+    private var loginRecovery = TeachingLoginRecovery()
+    private var openTask: Task<Void, Never>?
+    private var pageGeneration = UUID()
 
-    init(dataStore: WKWebsiteDataStore) {
+    init(dataStore: WKWebsiteDataStore, root: URL) {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = dataStore
         webView = WKWebView(frame: .zero, configuration: configuration)
+        loginSession = TeachingLoginSession(root: root, cookieStore: dataStore.httpCookieStore)
         super.init()
         webView.navigationDelegate = self; webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -55,12 +62,23 @@ enum TeachingWebError: LocalizedError {
 
     func open(_ url: URL) {
         guard !closed, TeachingWebsite.allowsNavigation(url), continuation == nil else { return }
-        currentNavigation = webView.load(URLRequest(url: url))
+        openTask?.cancel(); loginState = .checking
+        openTask = Task { [weak self] in
+            guard let self else { return }
+            await self.loginSession.prepare()
+            guard !Task.isCancelled, !self.closed, self.continuation == nil else { return }
+            self.loginRecovery.begin(url)
+            self.currentNavigation = self.webView.load(URLRequest(url: url))
+        }
     }
 
     func load(_ url: URL) async throws {
         guard !closed, TeachingWebsite.isPage(url), continuation == nil else { throw TeachingWebError.blocked }
+        openTask?.cancel()
+        await loginSession.prepare()
         try Task.checkCancellation()
+        guard !closed else { throw CancellationError() }
+        loginRecovery.begin(url); loginState = .checking
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (value: CheckedContinuation<Void, Error>) in
                 continuation = value
@@ -83,22 +101,27 @@ enum TeachingWebError: LocalizedError {
     }
 
     func read() async throws -> TeachingPage {
-        guard !closed, !loading, TeachingWebsite.isPage(webView.url) else { throw TeachingWebError.login }
+        guard !closed, !loading else { throw TeachingWebError.unreadable }
+        guard TeachingWebsite.isPage(webView.url) else { loginState = .needsLogin; throw TeachingWebError.login }
         let original = webView.url
+        let generation = pageGeneration
         let script = try Self.parserScript()
         let result: Any?
         do { result = try await webView.evaluateJavaScript("(\(script))(document, window.location.href)") }
         catch {
+            guard !closed, !loading, generation == pageGeneration, original == webView.url else { throw TeachingWebError.unreadable }
             let exception = (error as NSError).userInfo["WKJavaScriptExceptionMessage"] as? String ?? ""
-            if exception.contains("登录") { throw TeachingWebError.login }
+            if exception.contains("登录") { loginState = .needsLogin; loginSession.needsLogin(); throw TeachingWebError.login }
             let known = ["页面结构无法识别，请等待加载完成后重试。", "无法确定该内容所属课程。", "课程内容未加载，未进行更新。", "课程条目缺少名称。", "文件名编码无法读取。", "作业状态未加载，未更新该作业。"]
             if let message = known.first(where: { exception == $0 || exception == "Error: " + $0 }) { throw LibraryError.invalidInput(message) }
             throw TeachingWebError.unreadable
         }
-        guard !closed, original == webView.url, TeachingWebsite.isPage(webView.url), let text = result as? String,
+        guard !closed, !loading, generation == pageGeneration, original == webView.url, TeachingWebsite.isPage(webView.url), let text = result as? String,
               text.utf8.count <= 4_000_000, let data = text.data(using: .utf8) else { throw TeachingWebError.unreadable }
         let page = try JSONDecoder().decode(TeachingPage.self, from: data)
         guard !page.accountID.isEmpty, page.activities.count <= 3000, page.files.count <= 3000 else { throw TeachingWebError.unreadable }
+        loginState = .signedIn
+        loginSession.didAuthenticate()
         return page
     }
 
@@ -136,11 +159,13 @@ enum TeachingWebError: LocalizedError {
         downloadFolder = nil; destination = nil
     }
     func cancel() {
+        openTask?.cancel(); pageGeneration = UUID()
         completeLoad(.failure(CancellationError())); webView.stopLoading()
         loading = false; currentNavigation = nil
+        loginRecovery.cancel()
         failDownload(CancellationError())
     }
-    func close() { closed = true; cancel(); webView.navigationDelegate = nil; webView.uiDelegate = nil }
+    func close() { closed = true; cancel(); loginSession.close(); webView.navigationDelegate = nil; webView.uiDelegate = nil }
     private func completeLoad(_ result: Result<Void, Error>) {
         loadGeneration = nil
         loadTimeout?.cancel(); loadTimeout = nil
@@ -159,6 +184,8 @@ enum TeachingWebError: LocalizedError {
             notice = "仅打开教学网站与学校统一身份认证的 HTTPS 页面。"
             completeLoad(.failure(TeachingWebError.blocked)); decisionHandler(.cancel); return
         }
+        if navigationAction.targetFrame?.isMainFrame == true, navigationAction.request.url?.host == TeachingWebsite.host,
+           navigationAction.request.url?.path == "/login/logout.php" { loginRecovery.cancel(); loginSession.needsLogin() }
         decisionHandler(.allow)
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
@@ -175,11 +202,22 @@ enum TeachingWebError: LocalizedError {
         if navigationAction.targetFrame == nil, let url = navigationAction.request.url, TeachingWebsite.allowsNavigation(url) { currentNavigation = webView.load(navigationAction.request) }
         return nil
     }
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { currentNavigation = navigation; loading = true }
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { currentNavigation = navigation; loading = true; pageGeneration = UUID() }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard navigation === currentNavigation else { return }
+        if let next = loginRecovery.next(after: webView.url) {
+            loginState = .renewing; notice = "正在尝试学校统一身份认证；需要验证时请在网页完成。"
+            currentNavigation = webView.load(URLRequest(url: next)); return
+        }
         loading = false; address = webView.url.map { "\($0.host ?? "")\($0.path)" } ?? ""
-        notice = TeachingWebsite.isPage(webView.url) ? "页面已加载，可读取当前课程。" : "请在官方网页完成登录或验证。"
+        if TeachingWebsite.isPage(webView.url) {
+            notice = "页面已加载，可读取当前课程。"
+            Task { [weak self] in _ = try? await self?.read() }
+        }
+        else if webView.url?.host == "authserver.nju.edu.cn" || webView.url?.path == "/login/index.php" {
+            loginState = .needsLogin; loginSession.needsLogin()
+            notice = "学校统一认证需要手动登录或验证。完成后可直接继续更新。"
+        } else { loginState = .unknown; notice = "请返回课程首页后读取或更新。" }
         completeLoad(.success(()))
     }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { guard navigation === currentNavigation else { return }; loading = false; completeLoad(.failure(TeachingWebError.unreadable)) }

@@ -36,6 +36,7 @@ struct TeachingWebsiteSheet: View {
                 if controller.updating { Button("取消更新") { controller.cancel() } }
                 Button("完成") { controller.suspend(); dismiss() }.keyboardShortcut(.cancelAction).disabled(working)
             }.padding(20)
+            TeachingSessionControls(session: controller.client.loginSession).disabled(working)
             Divider()
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 10) {
@@ -222,6 +223,19 @@ struct TeachingWebsiteSheet: View {
     }
 }
 
+private struct TeachingSessionControls: View {
+    @ObservedObject var session: TeachingLoginSession
+    var body: some View {
+        HStack(spacing: 12) {
+            Toggle("记住此设备登录", isOn: Binding(get: { session.enabled }, set: { session.setEnabled($0) })).toggleStyle(.checkbox)
+                .help("只将教学网站会话保存在本机钥匙串，恢复有效期最多 7 天。学校会话过期仍需登录；关闭会清除保存的会话，当前网页登录保留。")
+            Text(session.status).font(.caption).foregroundStyle(session.hasIssue ? Color.orange : Color.secondary).lineLimit(2)
+            Spacer(minLength: 0)
+            if session.hasIssue { Button("重试钥匙串") { session.retry() }.controlSize(.small) }
+        }.padding(.horizontal, 20).padding(.bottom, 14)
+    }
+}
+
 private struct TeachingLoginView: View {
     @ObservedObject var client: TeachingWebClient
     var body: some View {
@@ -230,6 +244,7 @@ private struct TeachingLoginView: View {
                 if client.loading { ProgressView().controlSize(.small) }
                 Text(client.address.isEmpty ? "南京大学官方网页" : client.address).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
+                Text(client.loginState.label).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             TeachingOfficialWebView(webView: client.webView).overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary) }
             Text(client.notice).font(.caption).foregroundStyle(.secondary)

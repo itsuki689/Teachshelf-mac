@@ -54,6 +54,8 @@ private struct PlanUndo {
     private var teachingSession: TeachingWebsiteController?
     private var teachingSessionRoot: URL?
 
+    func flushTeachingLogin() async { await teachingSession?.client.loginSession.saveNow() }
+
     func teachingWebsiteSession() -> TeachingWebsiteController {
         if let teachingSession, teachingSessionRoot == repository.root { return teachingSession }
         teachingSession?.close()

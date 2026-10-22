@@ -17,11 +17,11 @@ import TeachshelfCore
     private let transport: TeachingWebsiteTransport?
 
     init(root: URL, dataStore: WKWebsiteDataStore? = nil, transport: TeachingWebsiteTransport? = nil) {
-        // Isolate sessions per library. Session data is managed by WebKit, outside library backups.
+        // Isolate sessions per library. WebKit and the optional local keychain are outside library backups.
         let hex = SHA256.hash(data: Data(root.standardizedFileURL.path.utf8)).prefix(16).map { String(format: "%02x", $0) }.joined()
         let uuid = "\(hex.prefix(8))-\(hex.dropFirst(8).prefix(4))-\(hex.dropFirst(12).prefix(4))-\(hex.dropFirst(16).prefix(4))-\(hex.suffix(12))"
         self.dataStore = dataStore ?? WKWebsiteDataStore(forIdentifier: UUID(uuidString: uuid)!)
-        client = TeachingWebClient(dataStore: self.dataStore)
+        client = TeachingWebClient(dataStore: self.dataStore, root: root)
         self.transport = transport
     }
     func openCourse(_ remoteID: String = "411") { showWeb = true; (transport ?? client).open(TeachingWebsite.courseURL(remoteID)) }
@@ -106,6 +106,7 @@ import TeachshelfCore
                         store?.reload()
                     } catch is CancellationError { throw CancellationError() }
                     catch TeachingWebError.login { throw TeachingWebError.login }
+                    catch TeachingWebError.accountMismatch { throw TeachingWebError.accountMismatch }
                     catch { self.messages.append(TeachingSyncMessage("\(activity.title)：\(error.localizedDescription)", isIssue: true)) }
                 }
                 completed = true
@@ -119,12 +120,16 @@ import TeachshelfCore
                 self.status = error.localizedDescription
                 self.showWeb = false
                 self.messages.append(TeachingSyncMessage(self.status, isIssue: true))
-                if case TeachingWebError.login = error { self.openCourse(connection.remoteCourseID) }
+                if case TeachingWebError.login = error {
+                    if self.transport == nil, self.client.loginState == .needsLogin { self.showWeb = true }
+                    else { self.openCourse(connection.remoteCourseID) }
+                }
+                if case TeachingWebError.accountMismatch = error { self.showWeb = true }
             }
         }
     }
     private func verify(_ page: TeachingPage, _ connection: TeachingConnection) throws {
-        guard page.accountID == connection.accountID else { throw TeachingWebError.login }
+        guard page.accountID == connection.accountID else { throw TeachingWebError.accountMismatch }
         guard page.courseID == connection.remoteCourseID else { throw TeachingWebError.unreadable }
     }
     func cancel() { operation?.cancel(); worker?.cancel(); client.cancel() }

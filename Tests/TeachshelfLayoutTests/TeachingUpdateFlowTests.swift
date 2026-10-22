@@ -86,7 +86,8 @@ import TeachshelfCore
         controller.update(connection, store: store); await controller.operation?.value
         #expect(store.state.materials.isEmpty && store.state.tasks.isEmpty)
         #expect(!store.isBusy && !controller.updating)
-        #expect(transport.opened == TeachingWebsite.courseURL("411"))
+        #expect(transport.opened == nil && controller.showWeb)
+        #expect(controller.status.contains("账号不同"))
         #expect(store.state.teachingConnections.first?.lastSyncAt == nil)
     }
 
