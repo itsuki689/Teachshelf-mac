@@ -10,18 +10,19 @@ extension LibraryRepository {
                 throw LibraryError.invalidInput("编辑资料时不能改变文件位置，请重新导入文件。")
             }
             var material = material
-            if material.courseID != existing.courseID { material.folderID = nil; material.customOrder = nil }
+            if material.courseID != existing.courseID { material.folderID = nil; material.customOrder = nil; material.storageDirectory = nil }
             material.category = try rememberCategory(material.category, in: &state)
             state.materials[index] = material
         }
     }
 
-    /// Reconnect an external reference without changing its identity or annotations.
-    /// Managed copies retain their library paths and must be reimported instead.
+    /// Reconnect a reference, or copy a missing managed file back into the library.
     public func relinkMaterial(id: UUID, to url: URL) throws {
-        try commit { state in
+        try withLock {
+            try synchronizeFileSystem()
+            var state = snapshot
             guard let index = state.materials.firstIndex(where: { $0.id == id }) else { throw LibraryError.missingRecord("资料") }
-            guard !state.materials[index].isManaged else { throw LibraryError.invalidInput("库内副本不能重新链接，请重新导入文件。") }
+            guard !state.materials[index].isManaged || state.materials[index].isMissing == true else { throw LibraryError.invalidInput("库内文件仍在原位置，无需重新定位。") }
             let url = url.standardizedFileURL
             try ensureSafePath(url, beneath: nil)
             guard fileManager.fileExists(atPath: url.path) else { throw LibraryError.missingFile(url.path) }
@@ -31,6 +32,25 @@ extension LibraryRepository {
             state.materials[index].storedPath = url.path
             state.materials[index].originalName = url.lastPathComponent
             state.materials[index].size = Int64(values.fileSize ?? 0)
+            state.materials[index].isMissing = nil
+            var created: URL?
+            if state.materials[index].isManaged {
+                state.materials[index].storageName = nil; state.materials[index].storageDirectory = nil
+                let ancestors = Set(MaterialOrdering.folderPath(state.materials[index].folderID, in: state.materialFolders).map(\.id))
+                for i in state.materialFolders.indices where ancestors.contains(state.materialFolders[i].id) { state.materialFolders[i].isMissing = nil }
+                for i in state.courses.indices where state.courses[i].id == state.materials[index].courseID { state.courses[i].isMissing = nil }
+                let path = MaterialStorageLayout.relativePath(for: state.materials[index], courses: state.courses, folders: state.materialFolders)
+                let target = root.appendingPathComponent(path)
+                try ensureSafePath(target, beneath: filesURL)
+                try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fileManager.copyItem(at: url, to: target)
+                created = target; state.materials[index].storedPath = path
+            }
+            do { try saveSnapshot(state) }
+            catch {
+                if let created { try? fileManager.removeItem(at: created); removeEmptyMaterialDirectories(from: created.deletingLastPathComponent()) }
+                throw error
+            }
         }
     }
 
@@ -62,6 +82,7 @@ extension LibraryRepository {
         try withLock {
             // Editors and drag providers may still hold the pre-move value snapshot.
             let current = snapshot.materials.first(where: { $0.id == material.id }) ?? material
+            guard current.isMissing != true else { throw LibraryError.missingFile(current.storedPath) }
             let url = try fileURL(for: current)
             try ensureSafePath(url, beneath: current.isManaged ? root : nil)
             guard fileManager.fileExists(atPath: url.path) else { throw LibraryError.missingFile(url.path) }
@@ -74,6 +95,7 @@ extension LibraryRepository {
         try withLock {
             let layout = MaterialStorageLayout.Directories(courses: snapshot.courses, folders: snapshot.materialFolders)
             guard let path = layout.folders[id] else { throw LibraryError.missingRecord("文件夹") }
+            guard snapshot.materialFolders.first(where: { $0.id == id })?.isMissing != true else { throw LibraryError.missingFile(path) }
             let directory = root.appendingPathComponent(path, isDirectory: true)
             try ensureSafePath(directory, beneath: filesURL)
             try ensureDirectory(directory)
@@ -83,6 +105,7 @@ extension LibraryRepository {
 
     public func importFiles(urls: [URL], courseID: UUID?, category: String, copy: Bool, folderID: UUID? = nil) throws -> ImportSummary {
         try withLock {
+            try synchronizeFileSystem()
             try ensureCourse(courseID)
             try Self.ensureMaterialFolder(folderID, courseID: courseID, in: snapshot)
             var next = snapshot
@@ -185,6 +208,9 @@ extension LibraryRepository {
     public func renameMaterialFolder(id: UUID, name: String) throws {
         try commit { state in
             guard let index = state.materialFolders.firstIndex(where: { $0.id == id }) else { throw LibraryError.missingRecord("文件夹") }
+            if let path = state.materialFolders[index].storageDirectory {
+                state.materialFolders[index].storageDirectory = String(path[..<path.lastIndex(of: "/")!]) + "/" + name.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
             state.materialFolders[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
@@ -193,6 +219,9 @@ extension LibraryRepository {
         try commit { state in
             guard let index = state.materialFolders.firstIndex(where: { $0.id == id }) else { throw LibraryError.missingRecord("文件夹") }
             if let colorHex, RGBColor(hex: colorHex) == nil { throw LibraryError.invalidInput("请输入六位 HEX 文件夹颜色。") }
+            if let path = state.materialFolders[index].storageDirectory {
+                state.materialFolders[index].storageDirectory = String(path[..<path.lastIndex(of: "/")!]) + "/" + name.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
             state.materialFolders[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             state.materialFolders[index].colorHex = colorHex.flatMap { RGBColor(hex: $0)?.hex }
         }
@@ -229,10 +258,11 @@ extension LibraryRepository {
 
     func trashMaterials(ids: Set<UUID>, moveToTrash: (URL) throws -> URL) throws {
         try withLock {
+            try synchronizeFileSystem()
             guard !ids.isEmpty, ids.isSubset(of: Set(snapshot.materials.map(\.id))) else { throw LibraryError.missingRecord("资料") }
             var moved: [(URL, URL)] = []
             do {
-                for record in snapshot.materials where ids.contains(record.id) && record.isManaged {
+                for record in snapshot.materials where ids.contains(record.id) && record.isManaged && record.isMissing != true {
                     let source = try fileURL(for: record)
                     try ensureSafePath(source, beneath: filesURL)
                     guard fileManager.fileExists(atPath: source.path) else { continue }
@@ -324,6 +354,7 @@ extension LibraryRepository {
         for record in MaterialOrdering.sorted(state.materials.filter { ids.contains($0.id) }, by: .custom) where record.folderID != folderID {
             let index = state.materials.firstIndex { $0.id == record.id }!
             state.materials[index].folderID = folderID; state.materials[index].customOrder = rank; rank += 1
+            state.materials[index].storageDirectory = nil
         }
     }
     static func validateMaterialOrganization(_ state: LibraryState) throws {
@@ -331,11 +362,10 @@ extension LibraryRepository {
         var names: Set<String> = []
         for folder in state.materialFolders {
             if let color = folder.colorHex, !ColorPalette.isStoredColor(color) { throw LibraryError.invalidInput("文件夹颜色无效。") }
-            guard state.courses.contains(where: { $0.id == folder.courseID }), !folder.name.isEmpty,
-                  folder.name == folder.name.trimmingCharacters(in: .whitespacesAndNewlines),
-                  folder.name.utf8.count <= 120, folder.name != ".", folder.name != "..",
-                  !folder.name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || "/\\:".unicodeScalars.contains($0) }) else {
-                throw LibraryError.invalidInput("文件夹名称不能为空、超过 120 字节或包含路径分隔符。")
+            guard (folder.courseID == nil || state.courses.contains(where: { $0.id == folder.courseID })), !folder.name.isEmpty,
+                  folder.name.utf8.count <= 255, folder.name != ".", folder.name != "..",
+                  !folder.name.contains("/"), !folder.name.contains("\0") else {
+                throw LibraryError.invalidInput("文件夹名称不能为空、超过 255 字节或包含路径分隔符。")
             }
             try ensureMaterialFolder(folder.parentID, courseID: folder.courseID, in: state)
             var visited: Set<UUID> = [folder.id], parent = folder.parentID
@@ -343,8 +373,8 @@ extension LibraryRepository {
                 guard visited.insert(id).inserted else { throw LibraryError.invalidInput("文件夹不能形成循环。") }
                 parent = state.materialFolders.first { $0.id == id }?.parentID
             }
-            let key = "\(folder.courseID)/\(folder.parentID?.uuidString ?? "root")/" + folder.name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-            guard names.insert(key).inserted else { throw LibraryError.invalidInput("同一位置已存在同名文件夹。") }
+            let key = "\(folder.courseID?.uuidString ?? "unassigned")/\(folder.parentID?.uuidString ?? "root")/" + folder.name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            if folder.isMissing != true { guard names.insert(key).inserted else { throw LibraryError.invalidInput("同一位置已存在同名文件夹。") } }
         }
         for record in state.materials {
             try ensureMaterialFolder(record.folderID, courseID: record.courseID, in: state)

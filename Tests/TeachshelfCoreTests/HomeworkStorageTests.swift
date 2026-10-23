@@ -44,10 +44,10 @@ struct HomeworkStorageTests {
         }
     }
 
-    @Test func openingMigratesLegacyCourseAndPublicTreesWithoutRewritingMetadata() throws {
+    @Test func openingMigratesLegacyCourseAndPublicTreesPreservingMetadata() throws {
         try fixture { root in
             let course = Course(name: "数学")
-            var state = LibraryState(); state.courses = [course]
+            var state = LibraryState(); state.schemaVersion = 8; state.courses = [course]
             try writeState(state, at: root)
             let bytes = try Data(contentsOf: root.appendingPathComponent("library.json"))
             let legacy = root.appendingPathComponent("HomeworkFiles/\(course.id.uuidString)")
@@ -62,7 +62,8 @@ struct HomeworkStorageTests {
             #expect(fm.fileExists(atPath: homework.appendingPathComponent("空目录").path))
             #expect(try repo.listHomework(courseID: nil, relativePath: "").map(\.name) == ["public.txt"])
             #expect(!fm.fileExists(atPath: root.appendingPathComponent("HomeworkFiles").path))
-            #expect(try Data(contentsOf: root.appendingPathComponent("library.json")) == bytes)
+            #expect(try Data(contentsOf: root.appendingPathComponent("library.json.bak")) == bytes)
+            #expect(repo.state.courses == state.courses && repo.state.schemaVersion == 9)
         }
     }
 
@@ -109,7 +110,7 @@ struct HomeworkStorageTests {
     @Test func legacyMergesKeepBothVersionsOfConflictingFilesAndFolderContents() throws {
         try fixture { root in
             let course = Course(name: "数学")
-            var state = LibraryState(); state.courses = [course]
+            var state = LibraryState(); state.schemaVersion = 8; state.courses = [course]
             try writeState(state, at: root)
             let legacy = root.appendingPathComponent("HomeworkFiles/\(course.id.uuidString)")
             let target = root.appendingPathComponent(MaterialStorageLayout.homeworkPath(for: course))
@@ -135,7 +136,7 @@ struct HomeworkStorageTests {
             try write("external", to: outside.appendingPathComponent("answer.txt"))
             let course = Course(name: "数学", homeworkFolder: outside.path)
             let library = root.appendingPathComponent("Library")
-            var state = LibraryState(); state.courses = [course]
+            var state = LibraryState(); state.schemaVersion = 8; state.courses = [course]
             try writeState(state, at: library)
             try write("internal", to: library.appendingPathComponent("HomeworkFiles/\(course.id.uuidString)/draft.txt"))
             let repo = try LibraryRepository(root: library)
@@ -155,7 +156,7 @@ struct HomeworkStorageTests {
             course.name = "新名"
             let target = MaterialStorageLayout.homeworkPath(for: course)
             if !committed { course.name = "旧名" }
-            var state = LibraryState(); state.courses = [course]
+            var state = LibraryState(); state.schemaVersion = 8; state.courses = [course]
             try writeState(state, at: root)
             try write("answer", to: root.appendingPathComponent(source + "/实验/answer.txt"))
             try write("answer", to: root.appendingPathComponent(target + "/实验/answer.txt"))
@@ -177,7 +178,7 @@ struct HomeworkStorageTests {
     @Test func oldAndNewBackupsRestoreHomeworkAndSupportLibraryMigration() throws {
         try fixture { root in
             let course = Course(name: "数学")
-            var state = LibraryState(); state.courses = [course]
+            var state = LibraryState(); state.schemaVersion = 8; state.courses = [course]
             let legacy = root.appendingPathComponent("Legacy.teachshelfbackup")
             try writeState(state, at: legacy)
             try write("answer", to: legacy.appendingPathComponent("HomeworkFiles/\(course.id.uuidString)/实验/main.py"))
@@ -201,7 +202,7 @@ struct HomeworkStorageTests {
     @Test func unsafeLegacyTreesAndOccupiedHomeworkRootsArePreserved() throws {
         try fixture { root in
             let course = Course(name: "数学")
-            var state = LibraryState(); state.courses = [course]
+            var state = LibraryState(); state.schemaVersion = 8; state.courses = [course]
             let library = root.appendingPathComponent("Library")
             try writeState(state, at: library)
             let source = library.appendingPathComponent("HomeworkFiles/\(course.id.uuidString)")

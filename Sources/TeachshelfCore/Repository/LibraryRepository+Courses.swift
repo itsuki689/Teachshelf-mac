@@ -3,6 +3,16 @@ import Foundation
 extension LibraryRepository {
     public func saveCourse(_ course: Course) throws {
         try commit { state in
+            var course = course
+            if let existing = state.courses.first(where: { $0.id == course.id }) {
+                course.storageDirectory = existing.storageDirectory
+                course.materialRootName = existing.materialRootName
+                course.isMissing = existing.isMissing
+                if existing.name != course.name, let path = existing.storageDirectory {
+                    let parent = String(path[..<path.lastIndex(of: "/")!])
+                    course.storageDirectory = parent + "/" + MaterialStorageLayout.component(course.name, byteLimit: 120) + " [\(course.id)]"
+                }
+            }
             guard !course.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw LibraryError.invalidInput("请输入课程名称。") }
             if let folder = course.homeworkFolder,
                folder != state.courses.first(where: { $0.id == course.id })?.homeworkFolder {

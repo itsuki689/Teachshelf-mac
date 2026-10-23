@@ -22,7 +22,7 @@ struct LibraryWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             commandBar
-            if store.currentCourseID != nil { folderNavigation }
+            if store.currentCourseID != nil || store.navigation == .unassigned { folderNavigation }
             if let courseID = store.currentCourseID {
                 let tasks = store.state.tasks.filter { $0.courseID == courseID && $0.completionRequired && !$0.isArchived && !$0.isCompleted && $0.cancelledAt == nil }
                 if !tasks.isEmpty {
@@ -321,7 +321,7 @@ struct LibraryWorkspace: View {
             Image(systemName: "folder.fill").font(.system(size: 28)).foregroundStyle(folder.colorHex.map { Color(hex: $0) } ?? store.courseColor(folder.courseID))
             VStack(alignment: .leading, spacing: 3) {
                 Text(folder.name).font(.system(size: 13, weight: .medium))
-                Text("文件夹 · \(row.materialIDs.count) 份资料").font(.caption).foregroundStyle(.secondary)
+                Text("\(folder.isMissing == true ? "位置丢失" : "文件夹") · \(row.materialIDs.count) 份资料").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
         }.padding(.horizontal, 14).frame(height: 62)

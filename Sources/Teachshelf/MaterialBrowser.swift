@@ -32,7 +32,8 @@ struct MaterialBrowserSection: Identifiable {
 
 @MainActor extension AppStore {
     var materialBrowserRows: [MaterialBrowserRow] {
-        guard let courseID = currentCourseID else { return visibleMaterials.map { .file($0) } }
+        guard currentCourseID != nil || navigation == .unassigned else { return visibleMaterials.map { .file($0) } }
+        let courseID = currentCourseID
         let folders = state.materialFolders.filter { $0.courseID == courseID }
         let records = filteredMaterials.filter { $0.courseID == courseID }
         let foldersByParent = Dictionary(grouping: folders, by: \.parentID)

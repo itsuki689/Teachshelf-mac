@@ -199,7 +199,7 @@ struct MaterialOrganizationTests {
         let bytes = try JSONSerialization.data(withJSONObject: object), index = root.appendingPathComponent("library.json")
         try bytes.write(to: index)
         var repo: LibraryRepository? = try LibraryRepository(root: root)
-        #expect(repo?.state.schemaVersion == 8 && repo?.state.materialFolders.isEmpty == true)
+        #expect(repo?.state.schemaVersion == 9 && repo?.state.materialFolders.isEmpty == true)
         #expect(try Data(contentsOf: root.appendingPathComponent("library.json.bak")) == bytes)
         let folder = try repo!.createMaterialFolder(name: "保留分组", courseID: old.courses[0].id)
         try repo!.setMaterialSort(.custom, courseID: old.courses[0].id)

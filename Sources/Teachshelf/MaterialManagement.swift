@@ -129,7 +129,7 @@ struct MaterialFolderSheet: View {
                 Text(creating ? "新建位置" : "目标文件夹").font(.caption).foregroundStyle(.secondary)
                 SolidChoiceMenu("目标文件夹", selection: $target, options: options)
             }
-            Text("分组随资料库保存，不改变原文件位置。").font(.caption).foregroundStyle(.secondary)
+            Text("文件夹对应资料库中的真实目录，移动库内资料会同步移动文件。").font(.caption).foregroundStyle(.secondary)
             Divider()
             HStack {
                 Spacer(); Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)

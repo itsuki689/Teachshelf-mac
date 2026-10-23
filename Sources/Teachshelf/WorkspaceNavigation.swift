@@ -69,6 +69,7 @@ extension AppStore {
                 guard courses.contains(id) else { return false }
                 return location.folderID == nil || folders.contains { $0.id == location.folderID && $0.courseID == id }
             }
+            if location.page == .unassigned { return location.folderID == nil || folders.contains { $0.id == location.folderID && $0.courseID == nil } }
             return location.folderID == nil
         }
     }

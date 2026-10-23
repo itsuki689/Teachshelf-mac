@@ -6,6 +6,7 @@ extension LibraryRepository {
     /// record deletion, all internal homework folders, and previous restore history.
     public func backup(to destination: URL) throws {
         try withLock {
+            try synchronizeFileSystem()
             try prepareDestination(destination)
             let staging = destination.deletingLastPathComponent().appendingPathComponent(".teachshelf-backup-\(UUID().uuidString)", isDirectory: true)
             defer { try? fileManager.removeItem(at: staging) }
@@ -40,7 +41,7 @@ extension LibraryRepository {
                 else { try fileManager.createDirectory(at: to, withIntermediateDirectories: false) }
             }
             // Managed paths are relative, so no old-machine absolute paths survive migration.
-            for index in restored.materials.indices where restored.materials[index].isManaged {
+            for index in restored.materials.indices where restored.materials[index].isManaged && restored.materials[index].isMissing != true {
                 let relative = restored.materials[index].storedPath
                 let file = staging.appendingPathComponent(relative)
                 try ensureSafePath(file, beneath: staging)
@@ -88,6 +89,7 @@ extension LibraryRepository {
     /// Copies the entire library, preserving the source and excluding its writer lock.
     public func copyLibrary(to destination: URL) throws {
         try withLock {
+            try synchronizeFileSystem()
             let destination = destination.standardizedFileURL
             let replacingEmptyDirectory = try prepareDestination(destination, allowEmptyDirectory: true)
             let staging = destination.deletingLastPathComponent().appendingPathComponent(".teachshelf-migrate-\(UUID().uuidString)", isDirectory: true)

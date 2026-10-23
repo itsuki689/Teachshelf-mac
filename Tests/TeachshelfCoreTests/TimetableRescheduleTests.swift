@@ -300,7 +300,7 @@ final class TimetableRescheduleTests {
         try original.write(to: index)
         do {
             let repo = try LibraryRepository(root: root)
-            #expect(repo.state.schemaVersion == 8)
+            #expect(repo.state.schemaVersion == 9)
             #expect(repo.state.timetableTerms[0].endDate == nil && repo.state.timetableTerms[0].reschedules.isEmpty)
             #expect(repo.state.timetableTerms[0].cancellations == [cancellation])
             #expect(try Data(contentsOf: root.appendingPathComponent("library.json.bak")) == original)
@@ -310,7 +310,7 @@ final class TimetableRescheduleTests {
             try repo.saveAppearance("dark")
         }
         let reopened = try LibraryRepository(root: root)
-        #expect(reopened.state.schemaVersion == 8)
+        #expect(reopened.state.schemaVersion == 9)
         #expect(reopened.state.timetableTerms[0].reschedules.count == 1)
         #expect(reopened.state.timetableTerms[0].cancellations == [cancellation])
         let backup = try JSONDecoder().decode(LibraryState.self, from: Data(contentsOf: root.appendingPathComponent("library.json.bak")))

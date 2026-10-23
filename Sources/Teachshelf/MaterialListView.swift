@@ -719,12 +719,13 @@ private final class MaterialNameCell: NSTableCellView {
         indentConstraint.constant = 16 + CGFloat(depth) * 22
         titleLabel.stringValue = material.title
         titleLabel.textColor = .labelColor
-        courseLabel.stringValue = course
+        courseLabel.stringValue = material.isMissing == true ? "位置丢失 · \(course)" : course
+        courseLabel.textColor = material.isMissing == true ? .systemOrange : .secondaryLabelColor
         extensionLabel.stringValue = material.fileExtension.isEmpty ? "FILE" : String(material.fileExtension.prefix(4)).uppercased()
         extensionLabel.textColor = NSColor(AppTheme(hex: color.hexString, dark: theme.isDark).ink)
         badge.layer?.backgroundColor = NSColor(color).withAlphaComponent(theme.isDark ? 0.18 : 0.10).cgColor
         toolTip = material.title
-        setAccessibilityLabel("\(material.title)，\(course)，\(material.fileType)")
+        setAccessibilityLabel("\(material.title)，\(course)，\(material.fileType)\(material.isMissing == true ? "，位置丢失" : "")")
     }
 }
 
@@ -756,7 +757,7 @@ private final class MaterialFolderCell: NSTableCellView {
     func configure(folder: MaterialFolder, depth: Int, expanded: Bool, count: Int, color: Color, theme: AppTheme, action: @escaping () -> Void) {
         indent.constant = CGFloat(depth) * 22
         self.action = action
-        titleLabel.stringValue = folder.name; detail.stringValue = "\(count) 份资料"
+        titleLabel.stringValue = folder.name; detail.stringValue = folder.isMissing == true ? "位置丢失 · \(count) 份资料" : "\(count) 份资料"
         icon.image = NSImage(systemSymbolName: expanded ? "folder.fill" : "folder", accessibilityDescription: "文件夹")
         icon.contentTintColor = NSColor(color)
         disclosure.image = NSImage(systemSymbolName: expanded ? "chevron.down" : "chevron.right", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 9, weight: .semibold))

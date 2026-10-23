@@ -14,7 +14,7 @@ extension LibraryRepository {
 
     func organizedMaterials(_ state: LibraryState) throws -> LibraryState {
         var next = state
-        next.schemaVersion = 8
+        next.schemaVersion = 9
         let directories = MaterialStorageLayout.Directories(courses: next.courses, folders: next.materialFolders)
         for index in next.materials.indices where next.materials[index].isManaged {
             next.materials[index].storedPath = MaterialStorageLayout.relativePath(for: next.materials[index], directories: directories)

@@ -9,6 +9,9 @@ public struct Course: Identifiable, Codable, Hashable, Sendable {
     public var isArchived: Bool
     public var homeworkFolder: String?
     public var materialSort: MaterialSortMode?
+    public var storageDirectory: String?
+    public var materialRootName: String?
+    public var isMissing: Bool?
 
     public init(id: UUID = UUID(), name: String, semester: String = "", teacher: String = "", colorHex: String = "#39786B", isArchived: Bool = false, homeworkFolder: String? = nil) {
         self.id = id; self.name = name; self.semester = semester; self.teacher = teacher
@@ -33,6 +36,9 @@ public struct MaterialRecord: Identifiable, Codable, Hashable, Sendable {
     public var lastOpenedAt: Date?
     public var folderID: UUID?
     public var customOrder: Int?
+    public var storageName: String?
+    public var storageDirectory: String?
+    public var isMissing: Bool?
 
     public init(id: UUID = UUID(), courseID: UUID? = nil, title: String, originalName: String, sourcePath: String, storedPath: String, isManaged: Bool, category: String = "课件", tags: String = "", notes: String = "", isFavorite: Bool = false, size: Int64 = 0, addedAt: Date = Date(), lastOpenedAt: Date? = nil) {
         self.id = id; self.courseID = courseID; self.title = title; self.originalName = originalName
@@ -135,7 +141,7 @@ public struct StudyTask: Identifiable, Codable, Hashable, Sendable {
 }
 
 public struct LibraryState: Codable, Hashable, Sendable {
-    public var schemaVersion: Int = 8
+    public var schemaVersion: Int = 9
     public var courses: [Course] = []
     public var materials: [MaterialRecord] = []
     public var materialFolders: [MaterialFolder] = []

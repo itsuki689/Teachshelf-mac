@@ -4,7 +4,12 @@ import Foundation
 enum MaterialStorageLayout {
     static func courseDirectory(for course: Course?) -> String {
         guard let course else { return "files/未分类" }
+        if let path = course.storageDirectory { return path }
         return "files/\(component(course.name, byteLimit: 120)) [\(course.id.uuidString)]"
+    }
+
+    static func materialRoot(for course: Course?) -> String {
+        courseDirectory(for: course) + "/" + (course?.materialRootName ?? "资料")
     }
 
     static func homeworkPath(for course: Course?) -> String {
@@ -15,18 +20,20 @@ enum MaterialStorageLayout {
     /// the homework workspace. Memoized paths avoid walking the tree per file.
     struct Directories {
         let courses: [UUID: String]
+        let materialRoots: [UUID: String]
         let folders: [UUID: String]
 
         init(courses: [Course], folders: [MaterialFolder]) {
             self.courses = Dictionary(uniqueKeysWithValues: courses.map { ($0.id, courseDirectory(for: $0)) })
+            self.materialRoots = Dictionary(uniqueKeysWithValues: courses.map { ($0.id, materialRoot(for: $0)) })
             let byID = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
-            let roots = self.courses
+            let roots = self.materialRoots
             var paths: [UUID: String] = [:]
             func path(_ id: UUID) -> String {
                 if let cached = paths[id] { return cached }
                 let folder = byID[id]!
-                let parent = folder.parentID.map(path) ?? (roots[folder.courseID]! + "/资料")
-                let result = parent + "/" + folder.name
+                let parent = folder.parentID.map(path) ?? (folder.courseID.flatMap { roots[$0] } ?? materialRoot(for: nil))
+                let result = folder.storageDirectory ?? (parent + "/" + folder.name)
                 paths[id] = result
                 return result
             }
@@ -35,15 +42,15 @@ enum MaterialStorageLayout {
         }
 
         func directory(for material: MaterialRecord) -> String {
-            material.folderID.flatMap { folders[$0] }
-                ?? ((material.courseID.flatMap { courses[$0] } ?? courseDirectory(for: nil)) + "/资料")
+            material.storageDirectory ?? material.folderID.flatMap { folders[$0] }
+                ?? (material.courseID.flatMap { materialRoots[$0] } ?? materialRoot(for: nil))
         }
 
         func required(in state: LibraryState) -> Set<String> {
-            var result = Set(courses.values)
-            result.formUnion(courses.values.map { $0 + "/资料" })
-            result.formUnion(folders.values)
-            if state.materials.contains(where: { $0.isManaged && $0.courseID == nil }) {
+            var result = Set(state.courses.filter { $0.isMissing != true }.compactMap { courses[$0.id] })
+            result.formUnion(state.courses.filter { $0.isMissing != true }.compactMap { materialRoots[$0.id] })
+            result.formUnion(state.materialFolders.filter { $0.isMissing != true }.compactMap { folders[$0.id] })
+            if state.materials.contains(where: { $0.isManaged && $0.courseID == nil && $0.isMissing != true }) {
                 result.insert(courseDirectory(for: nil))
                 result.insert(courseDirectory(for: nil) + "/资料")
             }
@@ -56,7 +63,9 @@ enum MaterialStorageLayout {
     }
 
     static func relativePath(for material: MaterialRecord, directories: Directories) -> String {
+        if material.isMissing == true { return material.storedPath }
         let directory = directories.directory(for: material)
+        if let name = material.storageName { return directory + "/" + name }
         var name = component(material.originalName, byteLimit: Int.max)
         if name.utf8.count > 218 {
             let suffix = URL(fileURLWithPath: name).pathExtension

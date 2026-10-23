@@ -14,6 +14,7 @@ public final class LibraryRepository: @unchecked Sendable {
     private(set) var snapshot = LibraryState()
     private var lockDescriptor: Int32 = -1
     var deletedTaskBatches: [[StudyTask]] = []
+    var fileObservations: [String: FileObservation] = [:]
 
     var indexURL: URL { root.appendingPathComponent("library.json") }
     var filesURL: URL { root.appendingPathComponent("files", isDirectory: true) }
@@ -43,7 +44,7 @@ public final class LibraryRepository: @unchecked Sendable {
         }
         var state = try decoder.decode(LibraryState.self, from: data)
         // Normalize early metadata first. The transactional storage upgrade writes
-        // version 8 only after the physical directory layout is ready.
+        // the current version only after the physical directory layout is ready.
         if (1...5).contains(state.schemaVersion) { state.schemaVersion = 6 }
         return state
     }
@@ -83,8 +84,10 @@ public final class LibraryRepository: @unchecked Sendable {
             try fileManager.createDirectory(at: filesURL, withIntermediateDirectories: true)
             try recoverPhysicalStorage()
             try recoverMaterialRelocation()
+            loadFileObservations()
+            if snapshot.schemaVersion >= 9 { try synchronizeFileSystem() }
             // Upgrade legacy layouts while retaining recoverable filesystem transactions.
-            try saveSnapshot(snapshot, storageOnly: true)
+            try saveSnapshot(snapshot, storageOnly: true, repairDirectories: snapshot.schemaVersion < 9)
         } catch {
             flock(lockDescriptor, LOCK_UN)
             Darwin.close(lockDescriptor)
@@ -115,6 +118,7 @@ public final class LibraryRepository: @unchecked Sendable {
     /// Mutate a value copy; publish it only after validation and persistence succeed.
     func commit(_ modify: (inout LibraryState) throws -> Void) throws {
         try withLock {
+            try synchronizeFileSystem()
             var next = snapshot
             try modify(&next)
             try saveSnapshot(next)
@@ -123,7 +127,7 @@ public final class LibraryRepository: @unchecked Sendable {
 
     /// Journal filesystem changes before applying them. The index hash distinguishes
     /// a committed move from an interrupted transaction on the next launch.
-    func saveSnapshot(_ state: LibraryState, storageOnly: Bool = false, storageState: LibraryState? = nil) throws {
+    func saveSnapshot(_ state: LibraryState, storageOnly: Bool = false, storageState: LibraryState? = nil, repairDirectories: Bool = false) throws {
         try recoverPhysicalStorage()
         try recoverMaterialRelocation()
         try validate(state)
@@ -132,7 +136,7 @@ public final class LibraryRepository: @unchecked Sendable {
         let transaction = PhysicalStorageTransaction(repository: self, next: next)
         do {
             try preparePhysicalStorage(from: storageState ?? snapshot, candidates: state, to: next,
-                                       repairDirectories: storageOnly || storageState != nil, transaction: transaction)
+                                       repairDirectories: repairDirectories || storageState != nil, transaction: transaction)
             if !storageOnly || next != snapshot { try persist(next) }
             snapshot = next
         } catch {
@@ -142,12 +146,21 @@ public final class LibraryRepository: @unchecked Sendable {
         }
         // A committed index remains authoritative if cleanup is interrupted.
         try? transaction.finish()
+        // A stale observation file is safe: IDs survive renames and absent entries
+        // are enrolled from the committed paths on the next scan.
+        try? refreshFileObservations()
+    }
+
+    func publishFileSystemChanges(_ state: LibraryState) throws {
+        try validate(state)
+        if state != snapshot { try persist(state); snapshot = state }
     }
 
     // MARK: - Validation and atomic persistence
 
     func validate(_ state: LibraryState) throws {
-        guard [6, 7, 8].contains(state.schemaVersion), state.schemaVersion >= 7 || state.teachingConnections.isEmpty else { throw LibraryError.invalidInput("不支持的资料库版本 \(state.schemaVersion)。") }
+        guard [6, 7, 8, 9].contains(state.schemaVersion), state.schemaVersion >= 7 || state.teachingConnections.isEmpty else { throw LibraryError.invalidInput("不支持的资料库版本 \(state.schemaVersion)。") }
+        try validateStorageOverrides(state)
         try Self.validateTeachingConnections(state)
         try Self.validateMaterialOrganization(state)
         guard ["system", "light", "dark"].contains(state.appearance) else { throw LibraryError.invalidInput("未知的外观设置。") }

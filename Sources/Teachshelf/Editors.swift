@@ -155,6 +155,7 @@ struct MaterialInspector: View {
                     Text(material.originalName).lineLimit(2)
                     Text("\(material.fileExtension) · \(material.sizeLabel)")
                     Label(material.isManaged ? "已复制到资料库" : "引用原文件", systemImage: material.isManaged ? "internaldrive" : "link")
+                    if material.isMissing == true { Label("位置丢失，请重新定位文件", systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
                     Text(material.addedAt, format: .dateTime.year().month().day())
                 }.font(.caption).foregroundStyle(.secondary)
                 Button("创建关联计划") {
@@ -164,11 +165,19 @@ struct MaterialInspector: View {
                                                 completionRequired: false)
                     }
                 }.controlSize(.small)
-                if !material.isManaged { Button("重新定位原文件…", action: relink).controlSize(.small) }
+                if !material.isManaged || material.isMissing == true { Button("重新定位文件…", action: relink).controlSize(.small) }
             }.padding(22)
         }.background(.bar)
             .onAppear { store.beforeLeavingMaterial = confirmEdits }
-            .onChange(of: material) { _, _ in store.beforeLeavingMaterial = confirmEdits }
+            .onChange(of: material) { old, new in
+                // Rebase unchanged fields while preserving the user's unsaved draft.
+                if title == old.title { title = new.title }
+                if courseID == old.courseID { courseID = new.courseID }
+                if category == old.category { category = new.category }
+                if tags == old.tags { tags = new.tags }
+                if notes == old.notes { notes = new.notes }
+                store.beforeLeavingMaterial = confirmEdits
+            }
             .onDisappear { store.beforeLeavingMaterial = nil }
             .onReceive(NotificationCenter.default.publisher(for: .saveMaterial)) { _ in _ = save() }
             .sheet(item: $taskToCreate) { task in TaskEditor(task: task, isNew: true).environmentObject(store) }
@@ -191,11 +200,11 @@ struct MaterialInspector: View {
     }
     private func relink() {
         guard confirmEdits() else { return }
-        let panel = NSOpenPanel(); panel.message = "重新定位原文件"; panel.canChooseDirectories = false
+        let panel = NSOpenPanel(); panel.message = material.isManaged ? "选择文件，将其复制回资料库并保留原记录、备注和关联计划" : "重新定位原文件"; panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try store.repository.relinkMaterial(id: material.id, to: url)
-            store.reload(); store.status = "原文件位置已更新"
+            store.reload(); store.status = material.isManaged ? "文件已复制回资料库" : "原文件位置已更新"
         } catch { store.report(error) }
     }
 }

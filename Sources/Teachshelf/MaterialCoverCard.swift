@@ -26,7 +26,7 @@ struct MaterialCoverCard: View {
                 }
             Text(material.title).font(.system(size: 13, weight: .medium)).lineLimit(2).frame(height: 34, alignment: .topLeading)
             HStack {
-                Text(courseName).lineLimit(1)
+                Text(material.isMissing == true ? "位置丢失 · \(courseName)" : courseName).lineLimit(1)
                 Spacer(minLength: 0)
                 if material.isFavorite { Image(systemName: "star.fill").foregroundStyle(.orange) }
             }.font(.system(size: 10)).foregroundStyle(.secondary)
@@ -40,7 +40,7 @@ struct MaterialCoverCard: View {
             .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: selected)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(material.title)
-            .accessibilityValue("\(courseName)\(selected ? "，已选中" : "")")
+            .accessibilityValue("\(courseName)\(material.isMissing == true ? "，位置丢失" : "")\(selected ? "，已选中" : "")")
             .accessibilityAddTraits([.isButton])
             .accessibilityAddTraits(selected ? .isSelected : [])
     }

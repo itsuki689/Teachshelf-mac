@@ -25,7 +25,7 @@ struct MaterialStorageTests {
 
     private func legacyState(course: Course) -> LibraryState {
         let id = UUID()
-        var state = LibraryState()
+        var state = LibraryState(); state.schemaVersion = 8
         state.courses = [course]
         state.materials = [MaterialRecord(id: id, courseID: course.id, title: "保留标题", originalName: "lecture.pdf", sourcePath: "/missing/original.pdf", storedPath: "files/\(id.uuidString)-lecture.pdf", isManaged: true, tags: "期末", notes: "保留备注", size: 7)]
         return state
@@ -215,7 +215,8 @@ struct MaterialStorageTests {
             try write("partial copy", to: root.appendingPathComponent(temporary))
             try JSONSerialization.data(withJSONObject: [["source": source, "destination": destination, "temporary": temporary]]).write(to: journal)
             let repo = try LibraryRepository(root: root)
-            #expect(repo.state == state)
+            var expected = state; expected.schemaVersion = 9
+            #expect(repo.state == expected)
             #expect(fm.fileExists(atPath: try repo.resolveURL(state.materials[0]).path))
             #expect(!fm.fileExists(atPath: root.appendingPathComponent(committed ? source : destination).path))
             #expect(!fm.fileExists(atPath: journal.path))

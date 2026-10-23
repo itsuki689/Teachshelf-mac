@@ -50,7 +50,7 @@ extension LibraryRepository {
                 value.items = old.items; value.folders = old.folders; value.messages = old.messages; value.lastSyncAt = old.lastSyncAt
                 state.teachingConnections[index] = value
             } else { state.teachingConnections.append(value) }
-            state.schemaVersion = 8
+            state.schemaVersion = 9
         }
     }
 
@@ -129,6 +129,7 @@ extension LibraryRepository {
         try TeachingWebsite.validateFile(downloadedURL, name: file.name)
         let digest = try TeachingWebsite.digest(downloadedURL)
         return try withLock {
+            try synchronizeFileSystem()
             var state = snapshot
             guard let c = state.teachingConnections.firstIndex(where: { $0.id == connectionID }),
                   let course = state.courses.first(where: { $0.id == state.teachingConnections[c].courseID }), !course.isArchived else {

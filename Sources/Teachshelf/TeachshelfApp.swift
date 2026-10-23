@@ -56,6 +56,7 @@ import AppKit
 @MainActor final class TeachshelfAppDelegate: NSObject, NSApplicationDelegate {
     weak var store: AppStore?
     private var waitingToQuit = false
+    func applicationDidBecomeActive(_ notification: Notification) { store?.requestFileSystemSync() }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if store?.isBusy == true {
             let alert = NSAlert(); alert.messageText = "正在处理文件"; alert.informativeText = "请等待当前操作完成后退出。"; alert.runModal()

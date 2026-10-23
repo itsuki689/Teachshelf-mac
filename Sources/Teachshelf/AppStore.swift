@@ -46,6 +46,9 @@ private struct PlanUndo {
     @Published var canUndoTaskDeletion = false
     @Published var status = "就绪"
     @Published var errorMessage: String?
+    var fileWatcher: LibraryFileWatcher?
+    var fileSyncTask: Task<Void, Never>?
+    var fileSyncGeneration = 0
     @Published var showingImport = false
     @Published var importURLs: [URL] = []
     private var importPanel: NSOpenPanel?
@@ -220,7 +223,10 @@ private struct PlanUndo {
         self.canUndoTaskDeletion = repository.canUndoTaskDeletion
         self.remembersLocation = remembersLocation
         scheduleSelection.reconcile(state)
+        watchLibraryFiles()
     }
+
+    deinit { fileSyncTask?.cancel() }
 
     static func bootstrap() -> AppStore {
         let args = CommandLine.arguments
@@ -313,7 +319,7 @@ private struct PlanUndo {
         return items
     }
     var visibleMaterials: [MaterialRecord] {
-        filteredMaterials.filter { currentCourseID == nil || $0.folderID == materialFolderID }
+        filteredMaterials.filter { (currentCourseID == nil && navigation != .unassigned) || $0.folderID == materialFolderID }
     }
     func courseName(_ id: UUID?) -> String { state.courses.first { $0.id == id }?.name ?? "未分类" }
     func courseColor(_ id: UUID?) -> Color { Color(hex: state.courses.first { $0.id == id }?.colorHex ?? "#39786B") }
@@ -451,6 +457,7 @@ private struct PlanUndo {
             if remembersLocation { UserDefaults.standard.set(target.path, forKey: "libraryPath") }
             if let id = accentPreviewID { cancelAccentPreview(sessionID: id) }
             repository = next; selectedMaterialIDs = []; materialFolderID = nil; expandedMaterialFolderIDs = []; materialEditing = false; workspaceCourseID = nil; workspaceCourseInitialized = false; search = ""; semester = "全部学期"; categoryFilter = "全部类别"; formatFilter = "全部格式"; navigation = .all
+            watchLibraryFiles()
             navigationHistory = WorkspaceNavigationHistory()
             showingWorkspaceSearch = false; workspaceSearchQuery = ""; toolbarPlanDraft = nil
             reload(); status = "已切换资料库，原目录保留"

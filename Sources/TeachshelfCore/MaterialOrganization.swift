@@ -10,12 +10,14 @@ public enum MaterialSortMode: String, Codable, CaseIterable, Sendable {
 /// Course-local physical directories. External references retain their original paths.
 public struct MaterialFolder: Identifiable, Codable, Hashable, Sendable {
     public var id: UUID
-    public var courseID: UUID
+    public var courseID: UUID?
     public var parentID: UUID?
     public var name: String
     public var colorHex: String?
     public var createdAt: Date
-    public init(id: UUID = UUID(), courseID: UUID, parentID: UUID? = nil, name: String, colorHex: String? = nil, createdAt: Date = Date()) {
+    public var storageDirectory: String?
+    public var isMissing: Bool?
+    public init(id: UUID = UUID(), courseID: UUID?, parentID: UUID? = nil, name: String, colorHex: String? = nil, createdAt: Date = Date()) {
         self.id = id; self.courseID = courseID; self.parentID = parentID; self.name = name; self.colorHex = colorHex; self.createdAt = createdAt
     }
 }

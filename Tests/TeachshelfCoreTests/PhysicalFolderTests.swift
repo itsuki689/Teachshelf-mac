@@ -56,7 +56,7 @@ struct PhysicalFolderTests {
             #expect(try Data(contentsOf: file) == Data("content".utf8))
             #expect(result.id == record.id && result.tags == record.tags && result.notes == record.notes)
             #expect(repo?.state.materials.last == reference)
-            #expect(repo?.state.schemaVersion == 8 && repo?.state.materialFolders == state.materialFolders)
+            #expect(repo?.state.schemaVersion == 9 && repo?.state.materialFolders == state.materialFolders)
             let emptyURL = try #require(repo!.materialFolderRevealURLs(id: empty.id).first)
             #expect(try fm.contentsOfDirectory(atPath: emptyURL.path).isEmpty)
             #expect(try Data(contentsOf: library.appendingPathComponent("library.json.bak")) == bytes)
