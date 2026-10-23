@@ -216,7 +216,7 @@ struct SettingsPage: View {
             SettingsGroup(title: "备份与恢复") {
                 SettingsCard {
                     SettingsRow(title: "导出完整备份", detail: "将当前资料库保存为一个备份包。", symbol: "arrow.up.doc") {
-                        Button("导出备份…", action: backup).appPrimaryButton()
+                        Button("导出备份…", action: backup).buttonStyle(.borderedProminent).tint(theme.controlAccent)
                     }
                     SettingsDivider()
                     SettingsRow(title: "从备份恢复", detail: "用已有备份恢复课程、资料与计划。", symbol: "arrow.counterclockwise") {

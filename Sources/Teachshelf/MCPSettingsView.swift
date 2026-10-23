@@ -48,7 +48,7 @@ private struct MCPConnectionSettings: View {
                 SettingsCard {
                     SettingsRow(title: "本机客户端", detail: "stdio 入口自动读取本机配置，课屿需保持打开。", symbol: "desktopcomputer") {
                         Button("复制 stdio 配置") { controller.copyStdioConfiguration(); copied = "已复制 stdio 配置" }
-                            .appPrimaryButton()
+                            .buttonStyle(.borderedProminent).tint(theme.controlAccent)
                     }
                     SettingsDivider()
                     SettingsRow(title: "HTTP 客户端", detail: "使用 Streamable HTTP 连接，配置中包含访问令牌。", symbol: "network") {
