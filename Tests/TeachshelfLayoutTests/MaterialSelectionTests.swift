@@ -6,6 +6,35 @@ import TeachshelfCore
 
 @Suite(.serialized)
 @MainActor struct MaterialSelectionTests {
+    @Test func folderContextMenuRevealsTheClickedFolderWithoutChangingSelectionOrNavigation() throws {
+        try withTable { store, host, _, _, items in
+            let course = Course(name: "文件夹菜单")
+            try store.repository.saveCourse(course)
+            for var item in items { item.courseID = course.id; try store.repository.updateMaterial(item) }
+            let folder = try store.repository.createMaterialFolder(name: "父分组", courseID: course.id, materialIDs: [items[0].id])
+            let nested = try store.repository.createMaterialFolder(name: "子分组", courseID: course.id,
+                                                                   parentID: folder.id, materialIDs: [items[1].id])
+            store.reload()
+            store.navigate(to: .course(course.id))
+            store.toggleMaterialFolder(folder.id)
+            store.selectMaterials([items[2].id])
+            var revealed: UUID?
+            var view = list(items: store.materialBrowserRows.compactMap(\.material), store: store)
+            view.onRevealFolder = { revealed = $0.id }
+            host.rootView = view
+            settle(host)
+            let table = try #require(findTable(in: host) as? MaterialNativeTable)
+            let row = try #require(store.materialBrowserRows.firstIndex { $0.id == nested.id })
+            let menu = try #require(table.contextMenu?(row))
+            let item = try #require(menu.items.first { $0.title == "在 Finder 中显示" })
+            #expect(NSApp.sendAction(try #require(item.action), to: item.target, from: item))
+            #expect(revealed == nested.id)
+            #expect(store.selectedMaterialIDs == [items[2].id])
+            #expect(store.materialFolderID == nil)
+            #expect(store.expandedMaterialFolderIDs == [folder.id])
+        }
+    }
+
     @Test func canceledInspectorNavigationRestoresNativeSelectionAndAllowsMultipleSelection() throws {
         try withTable { store, _, _, table, items in
             table.selectRowIndexes([0], byExtendingSelection: false)

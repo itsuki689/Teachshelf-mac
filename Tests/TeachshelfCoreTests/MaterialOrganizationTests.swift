@@ -22,6 +22,55 @@ struct MaterialOrganizationTests {
         try action(root, repo, course, repo.state.materials)
     }
 
+    @Test func folderRevealIncludesNestedAndReferencedFilesWithoutChangingTheIndex() throws {
+        try fixture { root, repo, course, records in
+            let folder = try repo.createMaterialFolder(name: "复习", courseID: course.id, materialIDs: [records[0].id])
+            let nested = try repo.createMaterialFolder(name: "重点", courseID: course.id, parentID: folder.id,
+                                                       materialIDs: [records[1].id, records[2].id])
+            let external = root.appendingPathComponent("外部引用.txt")
+            try "引用".write(to: external, atomically: true, encoding: .utf8)
+            _ = try repo.importFiles(urls: [external], courseID: course.id, category: "笔记", copy: false, folderID: nested.id)
+            try fm.removeItem(at: repo.resolveURL(records[2]))
+            let other = Course(name: "其他课程")
+            try repo.saveCourse(other)
+            let otherFolder = try repo.createMaterialFolder(name: "复习", courseID: other.id)
+            _ = try repo.importFiles(urls: [root.appendingPathComponent(records[3].originalName)], courseID: other.id,
+                                     category: "笔记", copy: true, folderID: otherFolder.id)
+
+            let before = repo.state
+            let index = repo.root.appendingPathComponent("library.json")
+            let bytes = try Data(contentsOf: index)
+            let expected = try Set([repo.resolveURL(records[0]), repo.resolveURL(records[1]), external])
+            #expect(Set(try repo.materialFolderRevealURLs(id: folder.id)) == expected)
+            #expect(Set(try repo.materialFolderRevealURLs(id: nested.id)) == Set([try repo.resolveURL(records[1]), external]))
+            #expect(repo.state == before)
+            #expect(try Data(contentsOf: index) == bytes)
+        }
+    }
+
+    @Test func emptyFolderRevealUsesExistingStorageAndRejectsStaleOrUnsafePaths() throws {
+        try fixture { root, repo, course, records in
+            let folder = try repo.createMaterialFolder(name: "空分组", courseID: course.id)
+            var renamed = course
+            renamed.name = "课程新名称"
+            try repo.saveCourse(renamed)
+            let directory = try repo.resolveURL(records[0]).deletingLastPathComponent()
+            #expect(try repo.materialFolderRevealURLs(id: folder.id) == [directory])
+
+            let emptyCourse = Course(name: "尚无文件的课程")
+            try repo.saveCourse(emptyCourse)
+            let emptyFolder = try repo.createMaterialFolder(name: "空分组", courseID: emptyCourse.id)
+            let absent = repo.root.appendingPathComponent(MaterialStorageLayout.courseDirectory(for: emptyCourse))
+            #expect(try repo.materialFolderRevealURLs(id: emptyFolder.id) == [repo.root.appendingPathComponent("files", isDirectory: true)])
+            #expect(!fm.fileExists(atPath: absent.path))
+            #expect(throws: (any Error).self) { try repo.materialFolderRevealURLs(id: UUID()) }
+
+            try fm.moveItem(at: directory, to: root.appendingPathComponent("displaced-course"))
+            try fm.createSymbolicLink(at: directory, withDestinationURL: root)
+            #expect(throws: (any Error).self) { try repo.materialFolderRevealURLs(id: folder.id) }
+        }
+    }
+
     @Test func folderNameAndColorSurviveReopenAndResetToInheritedColor() throws {
         let root = fm.temporaryDirectory.appendingPathComponent("Teachshelf-folder-color-\(UUID())")
         defer { try? fm.removeItem(at: root) }

@@ -28,6 +28,15 @@ extension AppStore {
         navigationHistory.record(workspaceLocation)
         materialFolderID = id; selectedMaterialIDs = []; expandedMaterialFolderIDs = []
     }
+
+    func revealMaterialFolder(_ folder: MaterialFolder) {
+        guard !isBusy else { return }
+        do {
+            let urls = try repository.materialFolderRevealURLs(id: folder.id)
+            NSWorkspace.shared.activateFileViewerSelecting(urls)
+        } catch { report(error) }
+    }
+
     func reorderMaterials(_ ids: Set<UUID>, before target: UUID?) {
         guard canReorderMaterials, let courseID = currentCourseID else { return }
         let records = state.materials.filter { ids.contains($0.id) }

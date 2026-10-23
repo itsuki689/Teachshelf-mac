@@ -69,6 +69,44 @@ extension LibraryRepository {
         }
     }
 
+    /// Logical folders have no directory of their own. Reveal their real files,
+    /// including descendants, or the nearest existing course storage directory.
+    public func materialFolderRevealURLs(id: UUID) throws -> [URL] {
+        try withLock {
+            guard let folder = snapshot.materialFolders.first(where: { $0.id == id }),
+                  let course = snapshot.courses.first(where: { $0.id == folder.courseID }) else {
+                throw LibraryError.missingRecord("文件夹")
+            }
+            let folderIDs = Set(snapshot.materialFolders.filter {
+                $0.courseID == course.id && MaterialOrdering.folderPath($0.id, in: snapshot.materialFolders).contains { $0.id == id }
+            }.map(\.id))
+            let records = snapshot.materials.filter {
+                $0.courseID == course.id && $0.folderID.map(folderIDs.contains) == true
+            }
+            var urls: [URL] = []
+            var seen: Set<URL> = []
+            for record in MaterialOrdering.sorted(records, by: .name) {
+                do {
+                    let url = try resolveURL(record)
+                    if seen.insert(url).inserted { urls.append(url) }
+                } catch LibraryError.missingFile(_) {
+                    // A missing reference must not hide the remaining local files.
+                    continue
+                }
+            }
+            if !urls.isEmpty { return urls }
+
+            let directory = root.appendingPathComponent(MaterialStorageLayout.courseDirectory(for: course))
+            try ensureSafePath(directory, beneath: filesURL)
+            if fileManager.fileExists(atPath: directory.path) {
+                try ensureDirectory(directory)
+                return [directory]
+            }
+            try ensureDirectory(filesURL)
+            return [filesURL]
+        }
+    }
+
     public func importFiles(urls: [URL], courseID: UUID?, category: String, copy: Bool, folderID: UUID? = nil) throws -> ImportSummary {
         try withLock {
             try ensureCourse(courseID)

@@ -21,6 +21,7 @@ struct MaterialListView: NSViewRepresentable {
     var browserRows: [MaterialBrowserRow]?
     var onToggleFolder: ((MaterialFolder) -> Void)?
     var onOpenFolder: ((MaterialFolder) -> Void)?
+    var onRevealFolder: ((MaterialFolder) -> Void)?
     var onEditFolder: ((MaterialFolder) -> Void)?
     var onDissolveFolder: ((MaterialFolder) -> Void)?
     var onMoveToFolder: ((Set<UUID>, UUID) -> Void)?
@@ -39,6 +40,7 @@ struct MaterialListView: NSViewRepresentable {
          onFavorite: @escaping (MaterialRecord) -> Void, onRemove: @escaping (Set<UUID>) -> Void,
          browserRows: [MaterialBrowserRow]? = nil,
          onToggleFolder: ((MaterialFolder) -> Void)? = nil, onOpenFolder: ((MaterialFolder) -> Void)? = nil,
+         onRevealFolder: ((MaterialFolder) -> Void)? = nil,
          onEditFolder: ((MaterialFolder) -> Void)? = nil, onDissolveFolder: ((MaterialFolder) -> Void)? = nil,
          onMoveToFolder: ((Set<UUID>, UUID) -> Void)? = nil,
          editing: Bool = false, dragData: @escaping (Set<UUID>) -> Data? = { _ in nil },
@@ -49,6 +51,7 @@ struct MaterialListView: NSViewRepresentable {
         self.onOpen = onOpen; self.onQuickLook = onQuickLook; self.onReveal = onReveal
         self.onFavorite = onFavorite; self.onRemove = onRemove
         self.browserRows = browserRows; self.onToggleFolder = onToggleFolder; self.onOpenFolder = onOpenFolder
+        self.onRevealFolder = onRevealFolder
         self.onEditFolder = onEditFolder; self.onDissolveFolder = onDissolveFolder; self.onMoveToFolder = onMoveToFolder
         self.editing = editing; self.dragData = dragData; self.onReorder = onReorder
         self.onGroup = onGroup; self.onExport = onExport
@@ -372,7 +375,8 @@ struct MaterialListView: NSViewRepresentable {
 
         private func folderMenu(_ folder: MaterialFolder, row: MaterialBrowserRow) -> NSMenu {
             let menu = NSMenu()
-            for (title, tag) in [("进入文件夹", 10), (row.isExpanded ? "收起文件夹" : "展开文件夹", 11), ("编辑名称与颜色…", 12), ("解散文件夹…", 13)] {
+            for (title, tag) in [("进入文件夹", 10), ("在 Finder 中显示", 14), (row.isExpanded ? "收起文件夹" : "展开文件夹", 11), ("编辑名称与颜色…", 12), ("解散文件夹…", 13)] {
+                if tag == 14 && parent.onRevealFolder == nil { continue }
                 let item = NSMenuItem(title: title, action: #selector(runFolderAction(_:)), keyEquivalent: "")
                 item.target = self; item.tag = tag; item.representedObject = folder.id; menu.addItem(item)
             }
@@ -385,6 +389,7 @@ struct MaterialListView: NSViewRepresentable {
             case 11: parent.onToggleFolder?(folder)
             case 12: parent.onEditFolder?(folder)
             case 13: parent.onDissolveFolder?(folder)
+            case 14: parent.onRevealFolder?(folder)
             default: break
             }
         }

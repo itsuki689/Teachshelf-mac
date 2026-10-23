@@ -176,6 +176,7 @@ struct LibraryWorkspace: View {
                          onFavorite: { store.favorite($0) }, onRemove: { store.removeMaterials($0) },
                          browserRows: rows,
                          onToggleFolder: { store.toggleMaterialFolder($0.id) }, onOpenFolder: { store.openMaterialFolder($0.id) },
+                         onRevealFolder: { store.revealMaterialFolder($0) },
                          onEditFolder: { folderToEdit = $0 }, onDissolveFolder: { store.dissolveMaterialFolder($0) },
                          onMoveToFolder: { ids, folderID in
                              guard let courseID = store.currentCourseID else { return }
@@ -331,6 +332,7 @@ struct LibraryWorkspace: View {
             .accessibilityElement(children: .contain).accessibilityLabel("\(folder.name)，文件夹")
             .contextMenu {
                 Button("进入文件夹") { store.openMaterialFolder(folder.id) }
+                Button("在 Finder 中显示") { store.revealMaterialFolder(folder) }
                 Button("编辑名称与颜色…") { folderToEdit = folder }
                 Button("解散文件夹…") { store.dissolveMaterialFolder(folder) }
             }
