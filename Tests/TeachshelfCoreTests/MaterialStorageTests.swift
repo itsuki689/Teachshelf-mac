@@ -172,7 +172,8 @@ struct MaterialStorageTests {
             let state = legacyState(course: Course(name: "数学"))
             try writeState(state, at: root)
             let repo = try LibraryRepository(root: root)
-            #expect(repo.state == state)
+            #expect(repo.state.materials[0].id == state.materials[0].id)
+            #expect(repo.state.materials[0].storedPath.contains("/资料/"))
             #expect(throws: (any Error).self) { try repo.resolveURL(state.materials[0]) }
             try repo.removeMaterials(ids: [state.materials[0].id])
             #expect(repo.state.materials.isEmpty)
@@ -187,6 +188,7 @@ struct MaterialStorageTests {
             try write("content", to: root.appendingPathComponent(record.storedPath))
             try fm.createDirectory(at: outside, withIntermediateDirectories: true)
             let target = root.appendingPathComponent(MaterialStorageLayout.relativePath(for: record, courses: state.courses))
+            try fm.createDirectory(at: target.deletingLastPathComponent().deletingLastPathComponent(), withIntermediateDirectories: true)
             try fm.createSymbolicLink(at: target.deletingLastPathComponent(), withDestinationURL: outside)
             #expect(throws: (any Error).self) { try LibraryRepository(root: root) }
             #expect(try fm.contentsOfDirectory(atPath: outside.path).isEmpty)
@@ -232,14 +234,14 @@ struct MaterialStorageTests {
             #expect(summary.imported == 1 && summary.errors.isEmpty)
             let material = try #require(repo.state.materials.first)
             let components = material.storedPath.split(separator: "/")
-            #expect(components.count == 3 && components[1].contains(course.id.uuidString))
+            #expect(components.count == 4 && components[1].contains(course.id.uuidString) && components[2] == "资料")
             #expect(components.allSatisfy { $0.utf8.count <= 255 && $0 != ".." && !$0.contains(":") && !$0.contains("\\") })
             #expect(try repo.resolveURL(material).pathExtension == "pdf")
             #expect(material.originalName == source.lastPathComponent)
         }
     }
 
-    @Test func externalReferencesAndRemovedRecordsKeepTheirPhysicalLocations() throws {
+    @Test func externalReferencesStayExternalAndRemovedRecordsFollowCourseDirectoryRenames() throws {
         try fixture { root in
             let repo = try LibraryRepository(root: root.appendingPathComponent("Library"))
             var course = Course(name: "课程")
@@ -253,7 +255,9 @@ struct MaterialStorageTests {
             try repo.removeMaterials(ids: [managed.id])
             course.name = "改名"
             try repo.saveCourse(course); try repo.deleteCourse(id: course.id)
-            #expect(fm.fileExists(atPath: retained.path))
+            let moved = repo.root.appendingPathComponent(MaterialStorageLayout.courseDirectory(for: course) + "/资料/" + retained.lastPathComponent)
+            #expect(fm.fileExists(atPath: moved.path))
+            #expect(try String(contentsOf: moved, encoding: .utf8) == "managed")
             let external = try #require(repo.state.materials.first)
             #expect(external.storedPath == source.path && !external.isManaged && external.courseID == nil)
         }

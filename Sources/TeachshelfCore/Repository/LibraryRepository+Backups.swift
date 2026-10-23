@@ -65,7 +65,7 @@ extension LibraryRepository {
                 }
                 let backupHistory = staging.appendingPathComponent("BackupHistory")
                 if fileManager.fileExists(atPath: backupHistory.path) { try fileManager.moveItem(at: backupHistory, to: history.appendingPathComponent("BackupHistory")) }
-                try saveSnapshot(restored)
+                try saveSnapshot(restored, storageState: restored)
                 deletedTaskBatches.removeAll()
             } catch {
                 var rollbackFailed = false

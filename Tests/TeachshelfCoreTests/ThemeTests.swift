@@ -95,7 +95,7 @@ struct ThemeTests {
         do {
             let repository = try LibraryRepository(root: root)
             #expect(repository.state.appearanceTransition == .default)
-            #expect(repository.state.schemaVersion == 6)
+            #expect(repository.state.schemaVersion == 8)
             #expect(try Data(contentsOf: index) == oldBytes)
         }
 
@@ -160,7 +160,7 @@ struct ThemeTests {
         }
         let reopened = try LibraryRepository(root: root)
         #expect(reopened.state == expected)
-        #expect(reopened.state.schemaVersion == 6)
+        #expect(reopened.state.schemaVersion == 8)
     }
 
     @Test func invalidTransitionInputAndFailedSavesPreservePreferencesAndIndex() throws {

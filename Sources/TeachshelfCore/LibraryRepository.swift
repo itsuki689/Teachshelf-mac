@@ -15,7 +15,7 @@ public final class LibraryRepository: @unchecked Sendable {
     private var lockDescriptor: Int32 = -1
     var deletedTaskBatches: [[StudyTask]] = []
 
-    private var indexURL: URL { root.appendingPathComponent("library.json") }
+    var indexURL: URL { root.appendingPathComponent("library.json") }
     var filesURL: URL { root.appendingPathComponent("files", isDirectory: true) }
 
     // MARK: - Index encoding and compatibility
@@ -42,9 +42,8 @@ public final class LibraryRepository: @unchecked Sendable {
             throw DecodingError.dataCorruptedError(in: value, debugDescription: "无法读取日期：\(text)")
         }
         var state = try decoder.decode(LibraryState.self, from: data)
-        // Older builds cannot preserve material folders, sorting, or plan attributes.
-        // Upgrade the in-memory snapshot on read; the next successful mutation or
-        // storage migration writes version 6, which those builds refuse to open.
+        // Normalize early metadata first. The transactional storage upgrade writes
+        // version 8 only after the physical directory layout is ready.
         if (1...5).contains(state.schemaVersion) { state.schemaVersion = 6 }
         return state
     }
@@ -82,8 +81,9 @@ public final class LibraryRepository: @unchecked Sendable {
             }
             try rejectSymbolicLink(filesURL)
             try fileManager.createDirectory(at: filesURL, withIntermediateDirectories: true)
+            try recoverPhysicalStorage()
             try recoverMaterialRelocation()
-            // Keep schema-only upgrades lazy while organizing both materials and homework.
+            // Upgrade legacy layouts while retaining recoverable filesystem transactions.
             try saveSnapshot(snapshot, storageOnly: true)
         } catch {
             flock(lockDescriptor, LOCK_UN)
@@ -121,71 +121,33 @@ public final class LibraryRepository: @unchecked Sendable {
         }
     }
 
-    /// Keep both paths valid until the index commits. A small journal allows the
-    /// next launch to finish cleanup after termination on either side of the commit.
-    /// Call only during initialization or inside withLock.
-    func saveSnapshot(_ state: LibraryState, storageOnly: Bool = false) throws {
+    /// Journal filesystem changes before applying them. The index hash distinguishes
+    /// a committed move from an interrupted transaction on the next launch.
+    func saveSnapshot(_ state: LibraryState, storageOnly: Bool = false, storageState: LibraryState? = nil) throws {
+        try recoverPhysicalStorage()
         try recoverMaterialRelocation()
         try validate(state)
         let next = try organizedMaterials(state)
         try validate(next)
-        var relocations = zip(state.materials, next.materials).compactMap { before, after -> MaterialRelocation? in
-            guard before.isManaged, before.storedPath != after.storedPath else { return nil }
-            return MaterialRelocation(source: before.storedPath, destination: after.storedPath,
-                                      temporary: "files/.material-copy-\(UUID().uuidString)")
-        }
-        relocations += try homeworkRelocations(in: next)
-        if relocations.isEmpty {
-            if !storageOnly { try persist(next) }
-            snapshot = next
-            return
-        }
-        try ensureSafePath(relocationURL, beneath: root)
-        try Self.encoder.encode(relocations).write(to: relocationURL, options: .atomic)
+        let transaction = PhysicalStorageTransaction(repository: self, next: next)
         do {
-            for relocation in relocations {
-                let source = try relocationFile(relocation.source)
-                let destination = try relocationFile(relocation.destination)
-                if relocation.directory == true {
-                    try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
-                    continue
-                }
-                try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-                if fileManager.fileExists(atPath: destination.path) {
-                    // A previous attempt may have stopped after preparing this path.
-                    guard sameMaterialContents(source, destination) else {
-                        throw LibraryError.invalidInput("课程资料目录中已有不同内容的同名文件：\(destination.lastPathComponent)")
-                    }
-                } else {
-                    // Links keep large course-file moves cheap on the same volume.
-                    // Volumes without hard-link support use a regular copy instead.
-                    do { try fileManager.linkItem(at: source, to: destination) }
-                    catch {
-                        let temporary = try relocationFile(relocation.temporary!)
-                        try fileManager.copyItem(at: source, to: temporary)
-                        let handle = try FileHandle(forWritingTo: temporary)
-                        try handle.synchronize()
-                        try handle.close()
-                        guard Darwin.renamex_np(temporary.path, destination.path, UInt32(RENAME_EXCL)) == 0 else {
-                            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-                        }
-                    }
-                }
-            }
+            try preparePhysicalStorage(from: storageState ?? snapshot, candidates: state, to: next,
+                                       repairDirectories: storageOnly || storageState != nil, transaction: transaction)
             if !storageOnly || next != snapshot { try persist(next) }
             snapshot = next
         } catch {
-            try? recoverMaterialRelocation(rollingBack: true)
+            do { try recoverPhysicalStorage(rollingBack: true) }
+            catch { throw LibraryError.invalidInput("文件整理未完成，恢复日志已保留；请重新打开资料库重试恢复。\(error.localizedDescription)") }
             throw error
         }
-        // The committed index is authoritative even if cleanup must wait for reopening.
-        try? recoverMaterialRelocation()
+        // A committed index remains authoritative if cleanup is interrupted.
+        try? transaction.finish()
     }
 
     // MARK: - Validation and atomic persistence
 
     func validate(_ state: LibraryState) throws {
-        guard [6, 7].contains(state.schemaVersion), state.schemaVersion == 7 || state.teachingConnections.isEmpty else { throw LibraryError.invalidInput("不支持的资料库版本 \(state.schemaVersion)。") }
+        guard [6, 7, 8].contains(state.schemaVersion), state.schemaVersion >= 7 || state.teachingConnections.isEmpty else { throw LibraryError.invalidInput("不支持的资料库版本 \(state.schemaVersion)。") }
         try Self.validateTeachingConnections(state)
         try Self.validateMaterialOrganization(state)
         guard ["system", "light", "dark"].contains(state.appearance) else { throw LibraryError.invalidInput("未知的外观设置。") }

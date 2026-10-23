@@ -50,7 +50,7 @@ extension LibraryRepository {
                 value.items = old.items; value.folders = old.folders; value.messages = old.messages; value.lastSyncAt = old.lastSyncAt
                 state.teachingConnections[index] = value
             } else { state.teachingConnections.append(value) }
-            state.schemaVersion = 7
+            state.schemaVersion = 8
         }
     }
 
@@ -157,7 +157,7 @@ extension LibraryRepository {
                 title: old != nil && old?.title != previous?.title ? old!.title : URL(fileURLWithPath: file.name).deletingPathExtension().lastPathComponent,
                 originalName: file.name, sourcePath: "teaching://\(connection.id.uuidString)/\(key)", storedPath: "", isManaged: true, category: normalized)
             material.folderID = folder; material.size = Int64(try downloadedURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
-            material.storedPath = MaterialStorageLayout.relativePath(for: material, courses: state.courses)
+            material.storedPath = MaterialStorageLayout.relativePath(for: material, courses: state.courses, folders: state.materialFolders)
             material.customOrder = (state.materials.filter { $0.courseID == course.id && $0.folderID == folder }.compactMap(\.customOrder).max() ?? -1) + 1
             if let old {
                 material.tags = old.tags; material.notes = old.notes; material.isFavorite = old.isFavorite

@@ -47,7 +47,7 @@ struct TeachingWebsiteTests {
 
     @Test func bindingUsesSchemaSevenAndPreventsDuplicateRemoteCourses() throws {
         let (repo, connection, root) = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
-        #expect(repo.state.schemaVersion == 7)
+        #expect(repo.state.schemaVersion == 8)
         let decoded = try JSONDecoder().decode(LibraryState.self, from: Data(contentsOf: repo.root.appendingPathComponent("library.json")))
         #expect(decoded.teachingConnections == [connection])
         let duplicate = TeachingConnection(courseID: connection.courseID, remoteCourseID: "411", remoteTitle: "同一课程", accountID: "123")
@@ -103,7 +103,7 @@ struct TeachingWebsiteTests {
         let second = TeachingConnection(courseID: course.id, remoteCourseID: "411", remoteTitle: "数据库系统概论", accountID: "456")
         #expect(try repo.connectTeachingCourse(first) == first)
         #expect(try repo.connectTeachingCourse(second) == second)
-        #expect(repo.state.schemaVersion == 7 && repo.state.teachingConnections == [first, second])
+        #expect(repo.state.schemaVersion == 8 && repo.state.teachingConnections == [first, second])
         #expect(repo.state.courses == [course])
         let reopened = try JSONDecoder().decode(LibraryState.self, from: Data(contentsOf: repo.root.appendingPathComponent("library.json")))
         #expect(reopened == repo.state)

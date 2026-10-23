@@ -7,7 +7,7 @@ public enum MaterialSortMode: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// Course-local groups leave both managed and referenced file locations intact.
+/// Course-local physical directories. External references retain their original paths.
 public struct MaterialFolder: Identifiable, Codable, Hashable, Sendable {
     public var id: UUID
     public var courseID: UUID

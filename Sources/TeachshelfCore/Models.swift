@@ -135,7 +135,7 @@ public struct StudyTask: Identifiable, Codable, Hashable, Sendable {
 }
 
 public struct LibraryState: Codable, Hashable, Sendable {
-    public var schemaVersion: Int = 6
+    public var schemaVersion: Int = 8
     public var courses: [Course] = []
     public var materials: [MaterialRecord] = []
     public var materialFolders: [MaterialFolder] = []

@@ -22,7 +22,7 @@ struct MaterialOrganizationTests {
         try action(root, repo, course, repo.state.materials)
     }
 
-    @Test func folderRevealIncludesNestedAndReferencedFilesWithoutChangingTheIndex() throws {
+    @Test func folderRevealSelectsPhysicalDirectoryWithoutChangingTheIndex() throws {
         try fixture { root, repo, course, records in
             let folder = try repo.createMaterialFolder(name: "复习", courseID: course.id, materialIDs: [records[0].id])
             let nested = try repo.createMaterialFolder(name: "重点", courseID: course.id, parentID: folder.id,
@@ -40,9 +40,10 @@ struct MaterialOrganizationTests {
             let before = repo.state
             let index = repo.root.appendingPathComponent("library.json")
             let bytes = try Data(contentsOf: index)
-            let expected = try Set([repo.resolveURL(records[0]), repo.resolveURL(records[1]), external])
-            #expect(Set(try repo.materialFolderRevealURLs(id: folder.id)) == expected)
-            #expect(Set(try repo.materialFolderRevealURLs(id: nested.id)) == Set([try repo.resolveURL(records[1]), external]))
+            let directory = try repo.resolveURL(records[0]).deletingLastPathComponent()
+            #expect(try repo.materialFolderRevealURLs(id: folder.id) == [directory])
+            #expect(try repo.materialFolderRevealURLs(id: nested.id) == [directory.appendingPathComponent("重点", isDirectory: true)])
+            #expect(try repo.resolveURL(repo.state.materials.first { !$0.isManaged }!) == external)
             #expect(repo.state == before)
             #expect(try Data(contentsOf: index) == bytes)
         }
@@ -55,14 +56,14 @@ struct MaterialOrganizationTests {
             renamed.name = "课程新名称"
             try repo.saveCourse(renamed)
             let directory = try repo.resolveURL(records[0]).deletingLastPathComponent()
-            #expect(try repo.materialFolderRevealURLs(id: folder.id) == [directory])
+            #expect(try repo.materialFolderRevealURLs(id: folder.id) == [directory.appendingPathComponent("空分组", isDirectory: true)])
 
             let emptyCourse = Course(name: "尚无文件的课程")
             try repo.saveCourse(emptyCourse)
             let emptyFolder = try repo.createMaterialFolder(name: "空分组", courseID: emptyCourse.id)
-            let absent = repo.root.appendingPathComponent(MaterialStorageLayout.courseDirectory(for: emptyCourse))
-            #expect(try repo.materialFolderRevealURLs(id: emptyFolder.id) == [repo.root.appendingPathComponent("files", isDirectory: true)])
-            #expect(!fm.fileExists(atPath: absent.path))
+            let directoryForEmptyFolder = repo.root.appendingPathComponent(MaterialStorageLayout.courseDirectory(for: emptyCourse) + "/资料/空分组", isDirectory: true)
+            #expect(try repo.materialFolderRevealURLs(id: emptyFolder.id) == [directoryForEmptyFolder])
+            #expect(fm.fileExists(atPath: directoryForEmptyFolder.path))
             #expect(throws: (any Error).self) { try repo.materialFolderRevealURLs(id: UUID()) }
 
             try fm.moveItem(at: directory, to: root.appendingPathComponent("displaced-course"))
@@ -140,13 +141,15 @@ struct MaterialOrganizationTests {
         }
     }
 
-    @Test func groupingIsAtomicCourseScopedAndLeavesFilePathsUntouched() throws {
+    @Test func groupingIsAtomicCourseScopedAndMovesManagedFiles() throws {
         try fixture { _, repo, course, records in
             let group = try repo.createMaterialFolder(name: "复习", courseID: course.id, materialIDs: Set(records.prefix(2).map(\.id)))
             let nested = try repo.createMaterialFolder(name: "重点", courseID: course.id, parentID: group.id)
             try repo.moveMaterials(ids: [records[1].id], to: nested.id, courseID: course.id)
             #expect(repo.state.materials[1].folderID == nested.id)
-            #expect(repo.state.materials.map(\.storedPath) == records.map(\.storedPath))
+            #expect(try repo.resolveURL(records[1]).deletingLastPathComponent().lastPathComponent == "重点")
+            #expect(repo.state.materials[1].storedPath != records[1].storedPath)
+            #expect(!fm.fileExists(atPath: repo.root.appendingPathComponent(records[1].storedPath).path))
             let other = Course(name: "其他课程"); try repo.saveCourse(other)
             let snapshot = repo.state
             #expect(throws: (any Error).self) { try repo.moveMaterials(ids: [records[0].id], to: group.id, courseID: other.id) }
@@ -186,7 +189,7 @@ struct MaterialOrganizationTests {
         }
     }
 
-    @Test func versionFiveLoadsWithoutRewritingAndNewGroupsSurviveReopen() throws {
+    @Test func versionFiveUpgradesAndNewFoldersSurviveReopen() throws {
         let root = fm.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("Teachshelf-legacy-groups-\(UUID())")
         defer { try? fm.removeItem(at: root) }
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
@@ -196,8 +199,8 @@ struct MaterialOrganizationTests {
         let bytes = try JSONSerialization.data(withJSONObject: object), index = root.appendingPathComponent("library.json")
         try bytes.write(to: index)
         var repo: LibraryRepository? = try LibraryRepository(root: root)
-        #expect(repo?.state.schemaVersion == 6 && repo?.state.materialFolders.isEmpty == true)
-        #expect(try Data(contentsOf: index) == bytes)
+        #expect(repo?.state.schemaVersion == 8 && repo?.state.materialFolders.isEmpty == true)
+        #expect(try Data(contentsOf: root.appendingPathComponent("library.json.bak")) == bytes)
         let folder = try repo!.createMaterialFolder(name: "保留分组", courseID: old.courses[0].id)
         try repo!.setMaterialSort(.custom, courseID: old.courses[0].id)
         repo = nil

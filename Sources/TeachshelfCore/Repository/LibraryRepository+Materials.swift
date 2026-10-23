@@ -69,41 +69,15 @@ extension LibraryRepository {
         }
     }
 
-    /// Logical folders have no directory of their own. Reveal their real files,
-    /// including descendants, or the nearest existing course storage directory.
+    /// Reveal the directory itself, including empty folders, without rewriting the index.
     public func materialFolderRevealURLs(id: UUID) throws -> [URL] {
         try withLock {
-            guard let folder = snapshot.materialFolders.first(where: { $0.id == id }),
-                  let course = snapshot.courses.first(where: { $0.id == folder.courseID }) else {
-                throw LibraryError.missingRecord("文件夹")
-            }
-            let folderIDs = Set(snapshot.materialFolders.filter {
-                $0.courseID == course.id && MaterialOrdering.folderPath($0.id, in: snapshot.materialFolders).contains { $0.id == id }
-            }.map(\.id))
-            let records = snapshot.materials.filter {
-                $0.courseID == course.id && $0.folderID.map(folderIDs.contains) == true
-            }
-            var urls: [URL] = []
-            var seen: Set<URL> = []
-            for record in MaterialOrdering.sorted(records, by: .name) {
-                do {
-                    let url = try resolveURL(record)
-                    if seen.insert(url).inserted { urls.append(url) }
-                } catch LibraryError.missingFile(_) {
-                    // A missing reference must not hide the remaining local files.
-                    continue
-                }
-            }
-            if !urls.isEmpty { return urls }
-
-            let directory = root.appendingPathComponent(MaterialStorageLayout.courseDirectory(for: course))
+            let layout = MaterialStorageLayout.Directories(courses: snapshot.courses, folders: snapshot.materialFolders)
+            guard let path = layout.folders[id] else { throw LibraryError.missingRecord("文件夹") }
+            let directory = root.appendingPathComponent(path, isDirectory: true)
             try ensureSafePath(directory, beneath: filesURL)
-            if fileManager.fileExists(atPath: directory.path) {
-                try ensureDirectory(directory)
-                return [directory]
-            }
-            try ensureDirectory(filesURL)
-            return [filesURL]
+            try ensureDirectory(directory)
+            return [directory]
         }
     }
 
@@ -129,7 +103,7 @@ extension LibraryRepository {
                         if !existingRanks.isEmpty || next.courses.first(where: { $0.id == courseID })?.materialSort == .custom {
                             material.customOrder = (existingRanks.max() ?? -1) + 1
                         }
-                        if copy { material.storedPath = MaterialStorageLayout.relativePath(for: material, courses: next.courses) }
+                        if copy { material.storedPath = MaterialStorageLayout.relativePath(for: material, courses: next.courses, folders: next.materialFolders) }
                         let values = try source.resourceValues(forKeys: [.fileSizeKey])
                         material.size = Int64(values.fileSize ?? 0)
                         if copy {

@@ -11,8 +11,52 @@ enum MaterialStorageLayout {
         courseDirectory(for: course) + "/作业"
     }
 
-    static func relativePath(for material: MaterialRecord, courses: [Course]) -> String {
-        let directory = courseDirectory(for: courses.first(where: { $0.id == material.courseID }))
+    /// A separate material root keeps a user folder named “作业” distinct from
+    /// the homework workspace. Memoized paths avoid walking the tree per file.
+    struct Directories {
+        let courses: [UUID: String]
+        let folders: [UUID: String]
+
+        init(courses: [Course], folders: [MaterialFolder]) {
+            self.courses = Dictionary(uniqueKeysWithValues: courses.map { ($0.id, courseDirectory(for: $0)) })
+            let byID = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
+            let roots = self.courses
+            var paths: [UUID: String] = [:]
+            func path(_ id: UUID) -> String {
+                if let cached = paths[id] { return cached }
+                let folder = byID[id]!
+                let parent = folder.parentID.map(path) ?? (roots[folder.courseID]! + "/资料")
+                let result = parent + "/" + folder.name
+                paths[id] = result
+                return result
+            }
+            for folder in folders { _ = path(folder.id) }
+            self.folders = paths
+        }
+
+        func directory(for material: MaterialRecord) -> String {
+            material.folderID.flatMap { folders[$0] }
+                ?? ((material.courseID.flatMap { courses[$0] } ?? courseDirectory(for: nil)) + "/资料")
+        }
+
+        func required(in state: LibraryState) -> Set<String> {
+            var result = Set(courses.values)
+            result.formUnion(courses.values.map { $0 + "/资料" })
+            result.formUnion(folders.values)
+            if state.materials.contains(where: { $0.isManaged && $0.courseID == nil }) {
+                result.insert(courseDirectory(for: nil))
+                result.insert(courseDirectory(for: nil) + "/资料")
+            }
+            return result
+        }
+    }
+
+    static func relativePath(for material: MaterialRecord, courses: [Course], folders: [MaterialFolder] = []) -> String {
+        relativePath(for: material, directories: Directories(courses: courses, folders: folders))
+    }
+
+    static func relativePath(for material: MaterialRecord, directories: Directories) -> String {
+        let directory = directories.directory(for: material)
         var name = component(material.originalName, byteLimit: Int.max)
         if name.utf8.count > 218 {
             let suffix = URL(fileURLWithPath: name).pathExtension

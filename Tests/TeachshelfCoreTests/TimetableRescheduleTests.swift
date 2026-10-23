@@ -287,7 +287,7 @@ final class TimetableRescheduleTests {
         #expect(normalized.originalDate == date(10, 13))
     }
 
-    @Test func versionThreeMigrationDefersWritesAndPreservesMovesAndCancellationsAcrossReopenAndBackup() throws {
+    @Test func versionThreeMigrationPreservesMovesAndCancellationsAcrossReopenAndBackup() throws {
         let root = try folder(), index = root.appendingPathComponent("library.json")
         let meeting = TimetableMeeting(title: "计算系统基础 II", weeks: Array(1...18), weekday: 2, startSection: 3, sectionCount: 2)
         let cancellation = TimetableCancellation(meetingID: meeting.id, date: date(10, 13), title: meeting.title)
@@ -300,16 +300,17 @@ final class TimetableRescheduleTests {
         try original.write(to: index)
         do {
             let repo = try LibraryRepository(root: root)
-            #expect(repo.state.schemaVersion == 6)
+            #expect(repo.state.schemaVersion == 8)
             #expect(repo.state.timetableTerms[0].endDate == nil && repo.state.timetableTerms[0].reschedules.isEmpty)
             #expect(repo.state.timetableTerms[0].cancellations == [cancellation])
-            #expect(try Data(contentsOf: index) == original)
-            try repo.rescheduleTimetableClass(termID: term.id, meetingID: meeting.id, originalDate: date(10, 20), to: date(10, 21), startSection: 5, sectionCount: 2, classroom: "迁移后安排")
             #expect(try Data(contentsOf: root.appendingPathComponent("library.json.bak")) == original)
+            let upgraded = try Data(contentsOf: index)
+            try repo.rescheduleTimetableClass(termID: term.id, meetingID: meeting.id, originalDate: date(10, 20), to: date(10, 21), startSection: 5, sectionCount: 2, classroom: "迁移后安排")
+            #expect(try Data(contentsOf: root.appendingPathComponent("library.json.bak")) == upgraded)
             try repo.saveAppearance("dark")
         }
         let reopened = try LibraryRepository(root: root)
-        #expect(reopened.state.schemaVersion == 6)
+        #expect(reopened.state.schemaVersion == 8)
         #expect(reopened.state.timetableTerms[0].reschedules.count == 1)
         #expect(reopened.state.timetableTerms[0].cancellations == [cancellation])
         let backup = try JSONDecoder().decode(LibraryState.self, from: Data(contentsOf: root.appendingPathComponent("library.json.bak")))

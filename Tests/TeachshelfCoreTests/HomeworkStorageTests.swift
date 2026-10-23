@@ -34,7 +34,7 @@ struct HomeworkStorageTests {
             let material = try #require(repo.state.materials.first)
             let homework = try repo.homeworkURL(courseID: course.id)
             #expect(homework.lastPathComponent == "作业")
-            #expect(try homework.deletingLastPathComponent().path == repo.resolveURL(material).deletingLastPathComponent().path)
+            #expect(try homework.deletingLastPathComponent().path == repo.resolveURL(material).deletingLastPathComponent().deletingLastPathComponent().path)
             #expect(try repo.homeworkURL(courseID: nil).path == repo.root.appendingPathComponent("files/未分类/作业").path)
             let exercise = root.appendingPathComponent("实验/代码/main.py")
             try write("print(1)", to: exercise)

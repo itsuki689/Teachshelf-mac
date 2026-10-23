@@ -164,7 +164,7 @@ final class TimetableCancellationTests {
         #expect(throws: (any Error).self) { try JSONDecoder().decode(TimetableTerm.self, from: JSONSerialization.data(withJSONObject: object)) }
     }
 
-    @Test func versionTwoMigrationWaitsForFirstMutationAndPreservesTheOriginalBackup() throws {
+    @Test func versionTwoMigrationPreservesCancellationsAndBacksUpOriginalIndex() throws {
         let root = try folder(), index = root.appendingPathComponent("library.json")
         let meeting = TimetableMeeting(title: "计算系统基础 II", weeks: [8], weekday: 2, startSection: 3, sectionCount: 2)
         let term = TimetableTerm(name: "2026 秋季", weekOneMonday: try date("2026-08-23T16:00:00Z"), meetings: [meeting])
@@ -176,21 +176,22 @@ final class TimetableCancellationTests {
         try original.write(to: index)
         do {
             let repo = try LibraryRepository(root: root)
-            #expect(repo.state.schemaVersion == 6)
+            #expect(repo.state.schemaVersion == 8)
             #expect(repo.state.timetableTerms.first?.cancellations.isEmpty == true)
-            #expect(try Data(contentsOf: index) == original)
+            #expect(try Data(contentsOf: root.appendingPathComponent("library.json.bak")) == original)
         }
+        let upgraded = try Data(contentsOf: index)
         do {
             let repo = try LibraryRepository(root: root)
             try repo.cancelTimetableClass(termID: term.id, meetingID: meeting.id, on: try date("2026-10-13T03:00:00Z"))
-            #expect(repo.state.schemaVersion == 6)
-            #expect(try Data(contentsOf: root.appendingPathComponent("library.json.bak")) == original)
+            #expect(repo.state.schemaVersion == 8)
+            #expect(try Data(contentsOf: root.appendingPathComponent("library.json.bak")) == upgraded)
         }
         let reopened = try LibraryRepository(root: root)
         #expect(reopened.state.timetableTerms.first?.cancellations.count == 1)
         #expect(reopened.state.timetableTerms.first?.meetings == [meeting])
         let persisted = try JSONDecoder().decode(LibraryState.self, from: Data(contentsOf: index))
-        #expect(persisted.schemaVersion == 6)
+        #expect(persisted.schemaVersion == 8)
         #expect(persisted == reopened.state)
     }
 

@@ -14,18 +14,10 @@ extension LibraryRepository {
 
     func organizedMaterials(_ state: LibraryState) throws -> LibraryState {
         var next = state
+        next.schemaVersion = 8
+        let directories = MaterialStorageLayout.Directories(courses: next.courses, folders: next.materialFolders)
         for index in next.materials.indices where next.materials[index].isManaged {
-            let material = next.materials[index]
-            let destination = MaterialStorageLayout.relativePath(for: material, courses: next.courses)
-            guard material.storedPath != destination else { continue }
-            let source = try fileURL(for: material)
-            try ensureSafePath(source, beneath: filesURL)
-            // Missing files remain visible and can still be removed from the library.
-            guard fileManager.fileExists(atPath: source.path) else { continue }
-            guard try source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
-                throw LibraryError.unsafePath(source.path)
-            }
-            next.materials[index].storedPath = destination
+            next.materials[index].storedPath = MaterialStorageLayout.relativePath(for: next.materials[index], directories: directories)
         }
         return next
     }
@@ -101,7 +93,9 @@ extension LibraryRepository {
         var cursor = directory
         let legacy = root.appendingPathComponent("HomeworkFiles")
         let boundary = isBeneath(cursor, root: filesURL) ? filesURL : legacy
-        while cursor.path != boundary.path && isBeneath(cursor, root: boundary) {
+        let layout = MaterialStorageLayout.Directories(courses: snapshot.courses, folders: snapshot.materialFolders)
+        let retained = Set(layout.required(in: snapshot).map { root.appendingPathComponent($0).path })
+        while cursor.path != boundary.path && isBeneath(cursor, root: boundary) && !retained.contains(cursor.path) {
             // rmdir only removes an empty directory; retained records/files are untouched.
             guard Darwin.rmdir(cursor.path) == 0 else { break }
             cursor.deleteLastPathComponent()

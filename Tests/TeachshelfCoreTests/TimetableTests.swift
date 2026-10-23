@@ -145,7 +145,7 @@ final class TimetableTests {
         #expect(throws: (any Error).self) { try LibraryRepository(root: root) }
     }
 
-    @Test func versionOneMigrationWaitsForMutationThenWritesProtectedVersionFour() throws {
+    @Test func versionOneMigrationWritesPhysicalStorageVersionAndPreservesData() throws {
         let root = try folder(), index = root.appendingPathComponent("library.json")
         let existing = Course(name: "原有课程", semester: "旧学期")
         var legacy = LibraryState(); legacy.schemaVersion = 1; legacy.courses = [existing]
@@ -155,21 +155,21 @@ final class TimetableTests {
         try original.write(to: index)
         do {
             let repo = try LibraryRepository(root: root)
-            #expect(repo.state.schemaVersion == 6)
+            #expect(repo.state.schemaVersion == 8)
             #expect(repo.state.courses == [existing])
             #expect(repo.state.timetableTerms.isEmpty)
-            #expect(try Data(contentsOf: index) == original)
+            #expect(try Data(contentsOf: root.appendingPathComponent("library.json.bak")) == original)
         }
-        #expect(try Data(contentsOf: index) == original)
+        let upgraded = try Data(contentsOf: index)
         do {
             let repo = try LibraryRepository(root: root)
             _ = try repo.importUndergraduateTimetable(schedule([course()]))
-            #expect(repo.state.schemaVersion == 6)
+            #expect(repo.state.schemaVersion == 8)
             #expect(repo.state.courses.contains(existing))
-            #expect(try Data(contentsOf: root.appendingPathComponent("library.json.bak")) == original)
+            #expect(try Data(contentsOf: root.appendingPathComponent("library.json.bak")) == upgraded)
         }
         let persisted = try JSONDecoder().decode(LibraryState.self, from: Data(contentsOf: index))
-        #expect(persisted.schemaVersion == 6)
+        #expect(persisted.schemaVersion == 8)
         #expect(persisted.timetableTerms.count == 1)
         let reopened = try LibraryRepository(root: root)
         #expect(reopened.state == persisted)
@@ -177,7 +177,7 @@ final class TimetableTests {
 
     @Test func futureAndInvalidSchemaVersionsAreRejectedWithoutRewriting() throws {
         let root = try folder(), index = root.appendingPathComponent("library.json")
-        for version in [0, 8, Int.max] {
+        for version in [0, 9, Int.max] {
             var state = LibraryState(); state.schemaVersion = version
             let bytes = try JSONEncoder().encode(state)
             try bytes.write(to: index)
