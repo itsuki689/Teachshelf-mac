@@ -46,6 +46,8 @@ private struct PlanUndo {
     @Published var canUndoTaskDeletion = false
     @Published var status = "就绪"
     @Published var errorMessage: String?
+    var mcpController: MCPController?
+    var editingPlanCounts: [UUID: Int] = [:]
     var fileWatcher: LibraryFileWatcher?
     var fileSyncTask: Task<Void, Never>?
     var fileSyncGeneration = 0
@@ -121,16 +123,20 @@ private struct PlanUndo {
         do {
             try action(repository)
             reload()
-            let ids = Set((before + state.tasks).map(\.id)).filter { id in
-                before.first { $0.id == id } != state.tasks.first { $0.id == id }
-            }
-            if !ids.isEmpty {
-                planUndo = PlanUndo(root: repository.root, before: before.filter { ids.contains($0.id) },
-                                    after: state.tasks.filter { ids.contains($0.id) }, label: label)
-            }
+            recordPlanChange(before: before, label: label)
             status = label
             return true
         } catch { report(error); return false }
+    }
+
+    func recordPlanChange(before: [StudyTask], label: String) {
+        let ids = Set((before + state.tasks).map(\.id)).filter { id in
+            before.first { $0.id == id } != state.tasks.first { $0.id == id }
+        }
+        if !ids.isEmpty {
+            planUndo = PlanUndo(root: repository.root, before: before.filter { ids.contains($0.id) },
+                        after: state.tasks.filter { ids.contains($0.id) }, label: label)
+        }
     }
 
     func undoPlanChange() {
@@ -224,6 +230,7 @@ private struct PlanUndo {
         self.remembersLocation = remembersLocation
         scheduleSelection.reconcile(state)
         watchLibraryFiles()
+        if remembersLocation { mcpController = MCPController(store: self) }
     }
 
     deinit { fileSyncTask?.cancel() }

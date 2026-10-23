@@ -11,12 +11,13 @@
 | 课程与资料 | 课程归档、复制入库或引用原文件、嵌套物理文件夹、标签、收藏、搜索、批量管理、ZIP 导出 |
 | 作业文件夹 | 每门课程的普通磁盘目录，可使用 Finder 管理，也可挂载资料库外的已有目录 |
 | 计划与 DDL | 月／周／日视图、执行时段与截止时间、重复计划、单次调整、完成状态与撤销 |
+| MCP 计划编辑 | 通用 stdio / HTTP 连接、LLM 查询和编辑计划、重复范围、版本冲突检查与撤销；支持服务器模型通过 SSH 隧道连接 |
 | 本科课表 | 南京大学官方页面或本地 JSON 导入，学期作息、调课、停课与重复导入 |
 | 教学网站 | 南京大学 Moodle 课程连接、更新清单、选择性下载、作业与 DDL 同步、本机钥匙串登录恢复 |
 | 外观与导航 | 全局搜索、后退／前进、可配置顶栏、明暗主题、强调色和可选过渡动画 |
 | 资料库 | 本地 JSON 索引、完整备份、恢复与迁移、保存失败回滚 |
 
-操作细节、快捷键和文件管理规则见 [使用指南](docs/usage.md)。
+操作细节、快捷键和文件管理规则见 [使用指南](docs/usage.md)。LLM 连接方式与工具说明见 [MCP 指南](docs/MCP.md)。
 
 ## 本机启动
 
@@ -44,7 +45,7 @@
 
 脚本将构建缓存写入 `.build/`，并处理 Command Line Tools 的测试框架路径。Swift 测试包含真实 AppKit 窗口和本地 WebKit HTML 夹具，需要 macOS 系统服务；限制 WebKit 子进程的沙箱可能导致测试无法完成。未安装 Node.js 时，脚本会明确提示跳过 JS 测试。
 
-**最近完整回归：2026-10-23，349 项 Swift 测试、42 个测试套件和 15 项本科课表 JS 解析测试通过。** 覆盖 Finder 改名与跨课程移动、丢失标记和重新定位、真实文件事件监听、物理文件夹与旧分组迁移、原子保存与中断恢复、备份恢复、计划与课表、网站更新流程、登录恢复、原生布局和工具栏交互。自动回归不代表重新完成学校登录或真实附件下载验收。
+**最近完整回归：2026-10-23，365 项 Swift 测试、45 个测试套件和 15 项本科课表 JS 解析测试通过。** 覆盖 MCP 协议与鉴权、真实 HTTP/stdio 调用、令牌更换与服务重启、计划并发冲突和撤销、Finder 改名与跨课程移动、丢失标记和重新定位、真实文件事件监听、物理文件夹与旧分组迁移、原子保存与中断恢复、备份恢复、计划与课表、网站更新流程、登录恢复、原生布局和工具栏交互。自动回归不代表重新完成学校登录或真实附件下载验收。
 
 单独运行解析器测试或筛选 Swift 测试：
 
@@ -65,14 +66,18 @@ open -n "$PWD/build/Teachshelf.app" --args --data-dir "$PWD/build/QA/manual-libr
 
 | 位置 | 职责 |
 | --- | --- |
-| [Package.swift](Package.swift) | Core 库、原生应用及两个测试 target，无第三方包依赖 |
+| [Package.swift](Package.swift) | Core 库、原生应用、MCP 服务与桥接，以及三个测试 target，无第三方包依赖 |
 | [Sources/TeachshelfCore](Sources/TeachshelfCore) | 数据模型、计划投影、课表、排序与配色等业务规则 |
 | [LibraryRepository.swift](Sources/TeachshelfCore/LibraryRepository.swift) | 资料库独占锁、状态快照、事务、索引兼容及原子保存 |
 | [Repository/](Sources/TeachshelfCore/Repository) | 按职责拆分的资料库操作，见下表 |
 | [Sources/Teachshelf](Sources/Teachshelf) | SwiftUI 页面、AppKit 控件与系统集成；入口为 `TeachshelfApp.swift`，共享界面状态为 `AppStore.swift` |
+| [Sources/TeachshelfCore/MCP](Sources/TeachshelfCore/MCP) | 计划工具定义、参数校验、版本检查与原子编辑 |
+| [Sources/TeachshelfMCPKit](Sources/TeachshelfMCPKit) | MCP JSON-RPC、受令牌保护的本机 HTTP 服务与私有配置 |
+| [Sources/TeachshelfMCP](Sources/TeachshelfMCP) | 随应用打包的 stdio 桥接入口 |
 | [Resources/](Resources) | 应用信息、图标、本科课表与教学网站解析脚本 |
 | [Tests/TeachshelfCoreTests](Tests/TeachshelfCoreTests) | 数据、文件管理、迁移及业务回归 |
 | [Tests/TeachshelfLayoutTests](Tests/TeachshelfLayoutTests) | 原生布局、交互、WebKit 解析及网站更新流程回归 |
+| [Tests/TeachshelfMCPTests](Tests/TeachshelfMCPTests) | 协议、鉴权、HTTP / stdio 实际调用、计划修改及冲突回归 |
 | [scripts/](scripts) | 构建、启动、测试及图标生成 |
 
 `Repository/` 中的文件扩展同一个 `LibraryRepository`，共享事务边界，不创建独立的资料库状态：

@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 import TeachshelfCore
 
 private enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, toolbar, library, backup, about
+    case appearance, toolbar, library, backup, mcp, about
     var id: Self { self }
     var title: String {
         switch self {
@@ -12,6 +12,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .toolbar: return "顶栏"
         case .library: return "资料库"
         case .backup: return "备份"
+        case .mcp: return "MCP"
         case .about: return "关于"
         }
     }
@@ -21,6 +22,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .toolbar: return "选择常用操作，调整胶囊顺序与数量"
         case .library: return "查看资料库位置，或切换到其他资料库"
         case .backup: return "导出完整备份，或从已有备份恢复"
+        case .mcp: return "连接 LLM 客户端，查询和编辑计划"
         case .about: return "课屿版本与文件管理说明"
         }
     }
@@ -144,6 +146,7 @@ struct SettingsWorkspace: View {
                     case .toolbar: toolbarPage
                     case .library: libraryPage
                     case .backup: backupPage
+                    case .mcp: MCPSettingsView()
                     case .about: aboutPage
                     }
                 }

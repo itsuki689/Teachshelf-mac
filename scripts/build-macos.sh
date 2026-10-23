@@ -19,6 +19,12 @@ swift build --disable-sandbox \
     --security-path "$PROJECT_DIR/.build/security" \
     --configuration release --product Teachshelf "${BUILD_ARGS[@]}"
 
+swift build --disable-sandbox \
+    --cache-path "$PROJECT_DIR/.build/cache" \
+    --config-path "$PROJECT_DIR/.build/config" \
+    --security-path "$PROJECT_DIR/.build/security" \
+    --configuration release --product TeachshelfMCP "${BUILD_ARGS[@]}"
+
 mkdir -p "$PROJECT_DIR/build"
 BUNDLE_STAGE="$(mktemp -d "$PROJECT_DIR/build/.app-bundle.XXXXXX")"
 STAGED_APP="$BUNDLE_STAGE/Teachshelf.app"
@@ -31,6 +37,8 @@ cleanup() {
 trap cleanup EXIT
 mkdir -p "$STAGED_APP/Contents/MacOS" "$STAGED_APP/Contents/Resources"
 cp "$PROJECT_DIR/.build/release/Teachshelf" "$STAGED_APP/Contents/MacOS/Teachshelf"
+cp "$PROJECT_DIR/.build/release/TeachshelfMCP" "$STAGED_APP/Contents/MacOS/TeachshelfMCP"
+cp "$PROJECT_DIR/docs/MCP.md" "$STAGED_APP/Contents/Resources/MCP.md"
 cp "$PROJECT_DIR/Resources/Info.plist" "$STAGED_APP/Contents/Info.plist"
 cp "$PROJECT_DIR/Resources/AppIcon.icns" "$STAGED_APP/Contents/Resources/AppIcon.icns"
 if [[ -d "$PROJECT_DIR/Resources/Timetable" ]]; then
@@ -40,6 +48,7 @@ cp "$PROJECT_DIR/README.md" "$STAGED_APP/Contents/Resources/README.md"
 cp -R "$PROJECT_DIR/Resources/TeachingWebsite" "$STAGED_APP/Contents/Resources/TeachingWebsite"
 chmod +x "$STAGED_APP/Contents/MacOS/Teachshelf"
 /usr/bin/plutil -lint "$STAGED_APP/Contents/Info.plist"
+/usr/bin/codesign --force --sign - "$STAGED_APP/Contents/MacOS/TeachshelfMCP"
 /usr/bin/codesign --force --deep --sign - "$STAGED_APP"
 /usr/bin/codesign --verify --deep --strict "$STAGED_APP"
 if [[ -e "$APP_DIR" ]]; then mv "$APP_DIR" "$BUNDLE_STAGE/Previous.app"; fi

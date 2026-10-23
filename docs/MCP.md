@@ -1,0 +1,93 @@
+# 用 LLM 操作课屿计划
+
+课屿 1.12 起内置 MCP 服务，支持桌面客户端和部署在服务器上的本地模型。模型需要由具备 MCP 工具调用能力的客户端或 Agent 驱动；只有模型推理 API 本身不能直接调用 MCP。
+
+## 本机客户端：stdio
+
+打开课屿，在 **设置 → MCP** 确认服务已启用，点击 **复制 stdio 配置**。安装在默认位置时配置如下：
+
+```json
+{
+  "mcpServers": {
+    "teachshelf": {
+      "command": "/Applications/课屿.app/Contents/MacOS/TeachshelfMCP"
+    }
+  }
+}
+```
+
+将这段配置合并到客户端的 MCP 配置中（保留已有服务器），再重新连接。不同客户端的配置文件位置、字段和导入方式可能不同。stdio 入口自动读取本机私有配置，不需要把令牌写入客户端配置。应用必须保持打开；退出课屿后，调用会返回连接错误，不会后台启动第二个资料库写入进程。
+
+## HTTP 客户端
+
+在设置中点击 **复制 HTTP 配置**，其中包含地址和真实访问令牌。默认地址 `http://127.0.0.1:53141/mcp`，使用 **Streamable HTTP**，不是旧版 SSE 传输。通用配置示例：
+
+```json
+{
+  "mcpServers": {
+    "teachshelf": {
+      "url": "http://127.0.0.1:53141/mcp",
+      "headers": { "Authorization": "Bearer <从课屿设置复制的访问令牌>" }
+    }
+  }
+}
+```
+
+如果客户端单独选择传输类型，选 Streamable HTTP / HTTP，并填写同一个 URL 和 Authorization 请求头。服务采用静态 Bearer 令牌，不提供 OAuth 自动发现；仅支持 OAuth、不能配置请求头的客户端可使用本机 stdio 入口或自己的 MCP 网关。
+
+令牌保存在 `~/Library/Application Support/TeachshelfMCP/config.json`，目录权限 0700，文件权限 0600，与资料库和备份分离。不要把真实配置提交到 Git 或放入聊天记录。更换令牌后，HTTP 客户端需要更新；stdio 入口会在下一次请求读取新配置。
+
+## 服务器上部署的模型
+
+在 **Mac 终端** 执行（替换服务器账号和地址；端口以课屿设置为准）：
+
+```sh
+ssh -o ExitOnForwardFailure=yes -N \
+  -R 127.0.0.1:53141:127.0.0.1:53141 user@server
+```
+
+保持 SSH 和课屿运行。然后把上面的 HTTP 配置加入**服务器上的 MCP 客户端/Agent**；该客户端访问服务器自己的 `127.0.0.1:53141`，SSH 会将请求转发至 Mac。Authorization 令牌仍然必需。服务器同一用户/管理员控制的进程能访问转发端口，因此只连接你信任的服务器。
+
+- 远端端口被占用时，可把 `-R` 的第一个 `53141` 改成其他空闲端口，并相应修改客户端 URL。课屿会核对 Host，请让客户端或受信任的反向代理设置 `Host: 127.0.0.1:<课屿本机端口>`，或者使用同端口转发。
+- SSH 服务端必须允许 TCP 转发；服务器仅运行模型推理服务时，需要在调用模型的 Agent 中集成 MCP。
+- 客户端在 Docker 容器中时，容器的 localhost 不是宿主机。可在同一网络命名空间建立隧道，或用受控网关连接；不要直接把课屿端口暴露到公网。
+- Mac 休眠、应用退出或 SSH 断开后连接不可用。恢复连接后，先查询当前计划状态再重试写入。
+
+## 可以怎么说
+
+- “列出本周未完成的计划，按课程整理。”
+- “新建高等数学复习计划，明晚 19:00 到 20:30，内容分成三个步骤。”
+- “把这周五的实验报告截止时间改到下周一 23:59，仅修改这一次。”
+- “将刚才的计划标记完成。”
+- “撤销刚才的修改。”
+
+工具列表：
+
+| 工具 | 用途 |
+| --- | --- |
+| `teachshelf_context` | 当前资料库标识、北京时间、课程 ID |
+| `teachshelf_list_plans` / `teachshelf_get_plan` | 搜索摘要、读取正文和版本 |
+| `teachshelf_list_occurrences` | 1–31 天内的执行和截止事件，包括重复例外 |
+| `teachshelf_search_materials` | 查找可关联的资料 ID，不读取文件正文 |
+| `teachshelf_create_plan` | 新建计划，支持正文、课程、关联资料、执行时间、DDL、重复规则 |
+| `teachshelf_update_plan` | 局部更新，仅改传入字段；可空字段传 null 清除 |
+| `teachshelf_set_plan_status` | 完成、未完成、取消、恢复、归档和取消归档 |
+| `teachshelf_delete_plan` | 删除指定范围的计划 |
+| `teachshelf_undo_change` | 按 change_id 撤销修改 |
+
+写入前调用 context 获取 `library_id`，从查询结果获取计划 `id` 和 `revision`，更新时将版本传为 `expected_revision`。冲突时会拒绝保存，应重新读取、合并，不应盲目覆盖。新建必须提供 UUID `request_id`；网络重试复用同一个 ID，已存在时会拒绝重复创建，可用这个 ID 查询是否已成功。
+
+重复计划通过 `scope` 选择 `all`（默认整组）、`thisOccurrence`（仅本次）、`thisAndFuture`（本次及以后）。非整组操作需要 `original_date`，即移动前的原始发生日。list_occurrences 会返回这个日期。仅本次不能修改重复规则。完成、未完成、恢复只支持整组/本次；归档仅支持整组。恢复取消保留其他修改，不清空整条例外。
+
+时间必须是带时区的 RFC3339，例如 `2026-10-23T19:00:00+08:00`；日期参数按 `Asia/Shanghai` 解释。新计划默认没有执行时间，执行与截止时间默认为非全天（全天需显式设置对应字段），填写 `starts_at` 会开启执行时间。修改开始时间时须自行调整已有结束时间，否则结束早于开始会被校验拒绝。返回中的 `starts_at: null` 表示未安排执行时间；通过 `has_execution_time: false` 取消执行时间。
+
+修改会刷新正在打开的资料库，并进入界面的计划撤销记录。MCP 的 `change_id` 撤销记录保留本次会话最近 50 次修改，重启或切换资料库后失效；如果同一计划后来被修改，旧撤销会被拒绝。编辑窗口正在打开的计划不能通过 MCP 修改，以免覆盖未保存草稿。
+
+## 实现与限制
+
+- 仅绑定 IPv4 `127.0.0.1`；校验 Host、Origin、访问令牌，拒绝跨站请求。不支持局域网直接监听。
+- 仅暴露计划操作以及课程/资料的查询，不暴露 shell、任意文件访问或文件删除。
+- 服务使用正在运行的应用仓库及原有原子保存、校验、重复投影逻辑；不直接写 JSON 索引。
+- 支持 MCP `2025-11-25`、`2025-06-18`、`2025-03-26`，更新版本初始化时协商至支持的版本。实现参考 [MCP 2025-11-25 传输规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports) 和 [工具规范](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)。
+- HTTP 无会话、无 SSE：POST 返回 JSON 或 202；GET/DELETE 返回 405。请求使用 Content-Length（stdio 桥接自动设置），暂不支持 chunked request、压缩请求体、HTTP 批量 JSON-RPC。单请求最多 1 MiB、最多 32 个并发连接、15 秒连接超时。
+- `--data-dir` 隔离启动默认不启动 MCP，避免测试资料库抢占正式端口。开发测试可创建独立 `MCPController` 并提供临时配置路径。stdio 入口也支持 `--config /absolute/path/config.json`。

@@ -119,6 +119,13 @@ struct TaskEditor: View {
         .environment(\.calendar, calendar)
         .environment(\.timeZone, calendar.timeZone)
         .dismissColorPanelAutomatically()
+        .onAppear { if !isNew { store.editingPlanCounts[originalPlan.id, default: 0] += 1 } }
+        .onDisappear {
+            if !isNew {
+                let count = (store.editingPlanCounts[originalPlan.id] ?? 1) - 1
+                store.editingPlanCounts[originalPlan.id] = count > 0 ? count : nil
+            }
+        }
         .onChange(of: editScope) { _, scope in
             draft = scope == .all ? currentParent : occurrence.map { PlanCalendar.snapshot(of: currentParent, originalDate: $0.originalDate) } ?? currentParent
             hasDeadline = draft.deadline != nil
