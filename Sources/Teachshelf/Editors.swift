@@ -168,7 +168,7 @@ struct MaterialInspector: View {
                 if !material.isManaged || material.isMissing == true { Button("重新定位文件…", action: relink).controlSize(.small) }
             }.padding(22)
         }.background(.bar)
-            .onAppear { store.beforeLeavingMaterial = confirmEdits }
+            .onAppear { store.beforeLeavingMaterial = confirmEdits; store.editingMaterialCounts[material.id, default: 0] += 1 }
             .onChange(of: material) { old, new in
                 // Rebase unchanged fields while preserving the user's unsaved draft.
                 if title == old.title { title = new.title }
@@ -178,7 +178,11 @@ struct MaterialInspector: View {
                 if notes == old.notes { notes = new.notes }
                 store.beforeLeavingMaterial = confirmEdits
             }
-            .onDisappear { store.beforeLeavingMaterial = nil }
+            .onDisappear {
+                store.beforeLeavingMaterial = nil
+                let count = (store.editingMaterialCounts[material.id] ?? 1) - 1
+                store.editingMaterialCounts[material.id] = count > 0 ? count : nil
+            }
             .onReceive(NotificationCenter.default.publisher(for: .saveMaterial)) { _ in _ = save() }
             .sheet(item: $taskToCreate) { task in TaskEditor(task: task, isNew: true).environmentObject(store) }
     }

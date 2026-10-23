@@ -14,7 +14,7 @@ import TeachshelfCore
         let initResult = try response(["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["protocolVersion": "2099-01-01", "capabilities": [:], "clientInfo": ["name": "test", "version": "1"]]])?["result"] as! [String: Any]
         #expect(initResult["protocolVersion"] as? String == "2025-11-25")
         let tools = try response(["jsonrpc": "2.0", "id": "list", "method": "tools/list"])?["result"] as! [String: Any]
-        #expect((tools["tools"] as? [Any])?.count == 10)
+        #expect((tools["tools"] as? [Any])?.count == TeachshelfMCPTools.definitions.count)
         #expect(try response(["jsonrpc": "2.0", "method": "notifications/initialized"]) == nil)
         let bad = try response(["jsonrpc": "2.0", "id": true, "method": "tools/list"])?["error"] as! [String: Any]
         #expect(bad["code"] as? Int == -32600)
@@ -97,27 +97,61 @@ import TeachshelfCore
         defer { server.stop() }
         let configURL = root.appendingPathComponent("Config/config.json")
         try MCPConfiguration(port: port, token: token).save(to: configURL)
-        let project = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let process = Process(), input = Pipe(), output = Pipe(), errors = Pipe()
-        process.executableURL = project.appendingPathComponent(".build/debug/TeachshelfMCP")
-        process.arguments = ["--config", configURL.path]; process.standardInput = input; process.standardOutput = output; process.standardError = errors
-        try process.run()
-        defer { if process.isRunning { process.terminate() } }
         let id = UUID().uuidString
         let messages: [[String: Any]] = [
             ["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["protocolVersion": "2025-11-25", "capabilities": [:], "clientInfo": ["name": "test", "version": "1"]]],
             ["jsonrpc": "2.0", "method": "notifications/initialized"],
             ["jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": ["name": "teachshelf_create_plan", "arguments": ["library_id": service.libraryID, "request_id": id, "fields": ["title": "中文与 emoji 📚", "content": "第一行\n第二行"]]]]
         ]
+        let responses = try await stdio(messages, configURL: configURL)
+        #expect(responses.count == 2)
+        #expect(repository.state.tasks.first?.id.uuidString == id)
+        #expect(repository.state.tasks.first?.content == "第一行\n第二行")
+    }
+    @Test func stdioProcessRenamesMaterialAndReadsCommittedMetadata() async throws {
+        let repository = try LibraryRepository(root: root.appendingPathComponent("Library"))
+        let source = root.appendingPathComponent("fixture.txt")
+        try Data("MCP fixture".utf8).write(to: source)
+        _ = try repository.importFiles(urls: [source], courseID: nil, category: "笔记", copy: true)
+        let material = repository.state.materials[0], service = LibraryMCPService(repository: repository)
+        let oldURL = try repository.resolveURL(material)
+        let revision = try service.context()["library_revision"] as! String
+        let (server, port, token) = try await start { data in MCPProtocol.response(to: data, call: service.call) }
+        defer { server.stop() }
+        let configURL = root.appendingPathComponent("Config/config.json")
+        try MCPConfiguration(port: port, token: token).save(to: configURL)
+        let messages: [[String: Any]] = [
+            ["jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": ["name": "teachshelf_update_material", "arguments": ["library_id": service.libraryID, "expected_library_revision": revision, "id": material.id.uuidString, "patch": ["filename": "第一章.txt", "notes": "下次复习", "favorite": true]]]],
+            ["jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": ["name": "teachshelf_get_material", "arguments": ["id": material.id.uuidString]]]
+        ]
+        let responses = try await stdio(messages, configURL: configURL)
+        #expect(responses.count == 2)
+        for response in responses {
+            #expect((response["result"] as? [String: Any])?["isError"] as? Bool == false)
+        }
+        let record = repository.state.materials[0], newURL = try repository.resolveURL(record)
+        #expect(record.notes == "下次复习" && record.isFavorite && newURL.lastPathComponent == "第一章.txt")
+        #expect(!FileManager.default.fileExists(atPath: oldURL.path))
+        #expect(try Data(contentsOf: newURL) == Data(contentsOf: source))
+        let result = responses.last?["result"] as? [String: Any]
+        let content = result?["structuredContent"] as? [String: Any]
+        #expect((content?["material"] as? [String: Any])?["notes"] as? String == "下次复习")
+    }
+    private func stdio(_ messages: [[String: Any]], configURL: URL) async throws -> [[String: Any]] {
+        let project = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let process = Process(), input = Pipe(), output = Pipe(), errors = Pipe()
+        process.executableURL = project.appendingPathComponent(".build/debug/TeachshelfMCP")
+        process.arguments = ["--config", configURL.path]; process.standardInput = input; process.standardOutput = output; process.standardError = errors
+        try process.run()
+        defer { if process.isRunning { process.terminate() } }
         for message in messages { try input.fileHandleForWriting.write(contentsOf: JSONSerialization.data(withJSONObject: message) + Data([10])) }
         try input.fileHandleForWriting.close()
         for _ in 0..<250 { if !process.isRunning { break }; try await Task.sleep(for: .milliseconds(20)) }
         #expect(!process.isRunning)
-        if process.isRunning { return }
+        if process.isRunning { return [] }
         let lines = output.fileHandleForReading.readDataToEndOfFile().split(separator: 10)
-        #expect(process.terminationStatus == 0 && lines.count == 2)
-        #expect(repository.state.tasks.first?.id.uuidString == id)
-        #expect(repository.state.tasks.first?.content == "第一行\n第二行")
+        #expect(process.terminationStatus == 0)
         #expect(errors.fileHandleForReading.readDataToEndOfFile().isEmpty)
+        return try lines.map { try JSONSerialization.jsonObject(with: Data($0)) as! [String: Any] }
     }
 }

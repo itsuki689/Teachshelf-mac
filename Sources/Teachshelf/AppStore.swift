@@ -47,6 +47,9 @@ private struct PlanUndo {
     @Published var status = "就绪"
     @Published var errorMessage: String?
     var mcpController: MCPController?
+    var editingMaterialCounts: [UUID: Int] = [:]
+    var editingFolderCounts: [UUID: Int] = [:]
+    var materialFolderSheetCount = 0
     var editingPlanCounts: [UUID: Int] = [:]
     var fileWatcher: LibraryFileWatcher?
     var fileSyncTask: Task<Void, Never>?

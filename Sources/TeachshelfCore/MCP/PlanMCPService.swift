@@ -1,29 +1,17 @@
 import Foundation
-import CryptoKit
 
 /// Uses the live repository's recursive lock for both revision checks and writes.
 /// Never opens a second writer or modifies library.json directly.
-public final class PlanMCPService {
+public final class PlanMCPService: @unchecked Sendable {
     public let repository: LibraryRepository
     public let libraryID: String
     private struct Change { let id: UUID; let before: [StudyTask]; let after: [StudyTask] }
     private var history: [Change] = []
     public init(repository: LibraryRepository) {
         self.repository = repository
-        libraryID = Self.hash(Data(repository.root.resolvingSymlinksInPath().standardizedFileURL.path.utf8))
+        libraryID = MCPRevision.libraryID(repository)
     }
-    private static func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
-    public static func revision(_ plan: StudyTask) throws -> String {
-        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(plan))
-        // Codable's Set ordering is unspecified. Canonicalize override sets before hashing.
-        func canonical(_ value: Any, key: String = "") -> Any {
-            if let array = value as? [String], key == "overriddenFields" { return array.sorted() }
-            if let dict = value as? [String: Any] { return dict.mapValuesWithKeys { canonical($1, key: $0) } }
-            if let array = value as? [Any] { return array.map { canonical($0) } }
-            return value
-        }
-        return hash(try JSONSerialization.data(withJSONObject: canonical(object), options: [.sortedKeys]))
-    }
+    public static func revision(_ plan: StudyTask) throws -> String { try MCPRevision.value(plan) }
     public func affectedIDs(name: String, arguments: [String: Any]) -> Set<UUID> {
         repository.withLock {
             if name == "teachshelf_undo_change", let text = arguments["change_id"] as? String, let id = UUID(uuidString: text), let change = history.first(where: { $0.id == id }) {
@@ -216,8 +204,4 @@ public final class PlanMCPService {
         }
         return result
     }
-}
-
-private extension Dictionary where Key == String, Value == Any {
-    func mapValuesWithKeys(_ transform: (String, Any) -> Any) -> [String: Any] { Dictionary(uniqueKeysWithValues: map { ($0.key, transform($0.key, $0.value)) }) }
 }

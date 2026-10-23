@@ -46,7 +46,7 @@ public enum PlanMCPTools {
         }
         let guarded = ["library_id", "id", "expected_revision"]
         return [
-            tool("teachshelf_context", "先调用本工具，获取当前资料库、课程 ID、北京时间和使用规则。仅操作课屿计划，不执行命令或读取资料文件。", [:]),
+            tool("teachshelf_context", "先调用本工具，获取当前资料库、课程 ID、北京时间和使用规则。支持课屿计划、课程、资料和物理文件夹操作；不执行命令。课程资料写入先查询 library_revision。", [:]),
             tool("teachshelf_list_plans", "搜索计划（默认仅未完成、未取消、未归档）；返回 ID、revision 和摘要。编辑前调用 get_plan 查看正文。分页 offset/limit。", ["query": string(), "course_id": uuid, "status": choice(["active", "completed", "cancelled", "archived", "all"]), "offset": ["type": "integer", "minimum": 0, "maximum": 1_000_000], "limit": ["type": "integer", "minimum": 1, "maximum": 100]]),
             tool("teachshelf_get_plan", "读取完整计划及 revision。可给 original_date 查看重复计划某一次的有效内容，revision 始终属于整组。", ["id": uuid, "original_date": civilDate], ["id"]),
             tool("teachshelf_list_occurrences", "按北京时间查询日程与截止事件，包含重复计划和临时变更。from/to 均为包含端点的日期，最多 31 天；同一计划可同时有执行与截止事件。", ["from": civilDate, "to": civilDate, "course_id": uuid], ["from", "to"]),

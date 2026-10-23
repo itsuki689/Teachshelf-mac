@@ -138,6 +138,8 @@ struct MaterialFolderSheet: View {
                     .disabled(creating && name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }.padding(26).frame(width: 420)
+            .onAppear { store.materialFolderSheetCount += 1 }
+            .onDisappear { store.materialFolderSheetCount = max(0, store.materialFolderSheetCount - 1) }
     }
     private func save() {
         guard let courseID = store.currentCourseID else { return }
@@ -185,6 +187,11 @@ struct MaterialFolderEditor: View {
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }.padding(26).frame(width: 420).dismissColorPanelAutomatically()
+            .onAppear { store.editingFolderCounts[folder.id, default: 0] += 1 }
+            .onDisappear {
+                let count = (store.editingFolderCounts[folder.id] ?? 1) - 1
+                store.editingFolderCounts[folder.id] = count > 0 ? count : nil
+            }
     }
     private func save() {
         do {

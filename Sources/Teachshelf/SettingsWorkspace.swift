@@ -22,7 +22,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .toolbar: return "选择常用操作，调整胶囊顺序与数量"
         case .library: return "查看资料库位置，或切换到其他资料库"
         case .backup: return "导出完整备份，或从已有备份恢复"
-        case .mcp: return "连接 LLM 客户端，查询和编辑计划"
+        case .mcp: return "连接 LLM 客户端，管理计划、课程与资料"
         case .about: return "课屿版本与文件管理说明"
         }
     }

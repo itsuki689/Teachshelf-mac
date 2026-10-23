@@ -19,10 +19,10 @@ private struct MCPConnectionSettings: View {
         VStack(alignment: .leading, spacing: 20) {
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
-                    Toggle("允许 MCP 客户端访问计划", isOn: Binding(get: { controller.configuration?.enabled == true }, set: { controller.configure(enabled: $0) }))
+                    Toggle("允许 MCP 客户端访问课屿", isOn: Binding(get: { controller.configuration?.enabled == true }, set: { controller.configure(enabled: $0) }))
                         .toggleStyle(.switch).disabled(controller.configuration == nil)
                     Text(controller.connectionStatus).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
-                    Text("可查询课程和资料标题，读取、创建、编辑和删除计划。修改会立即保存，计划工作区可撤销最近一次修改。")
+                    Text("可管理计划、课程、资料信息及物理文件夹。修改会立即保存；计划修改支持撤销，课程资料修改不使用计划撤销。资料文件正文不通过 MCP 读取。")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
             }
