@@ -3,7 +3,7 @@ import AppKit
 import UniformTypeIdentifiers
 import TeachshelfCore
 
-private enum SettingsSection: String, CaseIterable, Identifiable {
+enum SettingsSection: String, CaseIterable, Identifiable {
     case appearance, toolbar, library, backup, mcp, about
     var id: Self { self }
     var title: String {
@@ -16,302 +16,273 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .about: return "关于"
         }
     }
-    var subtitle: String {
+    var symbol: String {
         switch self {
-        case .appearance: return "显示模式、明暗过渡与个性配色"
-        case .toolbar: return "选择常用操作，调整胶囊顺序与数量"
-        case .library: return "查看资料库位置，或切换到其他资料库"
-        case .backup: return "导出完整备份，或从已有备份恢复"
-        case .mcp: return "连接 LLM 客户端，管理计划、课程与资料"
-        case .about: return "课屿版本与文件管理说明"
+        case .appearance: return "paintpalette"
+        case .toolbar: return "rectangle.topthird.inset.filled"
+        case .library: return "externaldrive"
+        case .backup: return "clock.arrow.circlepath"
+        case .mcp: return "point.3.connected.trianglepath.dotted"
+        case .about: return "info.circle"
         }
     }
-}
-
-private struct SettingsPanel<Content: View>: View {
-    @ViewBuilder let content: () -> Content
-    var body: some View {
-        VStack(spacing: 0) { content() }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary, lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
-    }
-}
-
-private struct SettingsControlRow<Control: View>: View {
-    let title: String
-    let detail: String
-    @ViewBuilder let control: () -> Control
-
-    init(_ title: String, detail: String, @ViewBuilder control: @escaping () -> Control) {
-        self.title = title; self.detail = detail; self.control = control
-    }
-
-    var body: some View {
-        HStack(spacing: 20) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title).font(.body.weight(.medium))
-                Text(detail).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-            control().fixedSize()
-        }.padding(18)
-    }
-}
-
-private struct SettingsInformationRow: View {
-    let symbol: String
-    let title: String
-    let detail: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(.secondary)
-                .frame(width: 24, height: 20)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title).font(.body.weight(.medium))
-                Text(detail).font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }.padding(18)
-    }
-}
-
-private struct SettingsDisclosure<Content: View>: View {
-    let title: String
-    @ViewState private var isExpanded = false
-    @ViewBuilder let content: () -> Content
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
-        self.title = title; self.content = content
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                isExpanded.toggle()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary).rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    Text(title)
-                    Spacer(minLength: 0)
-                }.padding(18).contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityLabel(title)
-                .accessibilityValue(isExpanded ? "已展开" : "已收起")
-            if isExpanded {
-                content().padding(.horizontal, 18).padding(.bottom, 18).transition(.opacity)
-            }
-        }.animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: isExpanded)
+    var subtitle: String {
+        switch self {
+        case .appearance: return "选择舒适的显示模式，让课屿更合你的习惯。"
+        case .toolbar: return "把常用操作放在手边，按你的习惯排列。"
+        case .library: return "查看本机资料，管理资料库的位置。"
+        case .backup: return "保存一份完整副本，让资料随时可以恢复。"
+        case .mcp: return "连接 AI 客户端，管理计划、课程与资料。"
+        case .about: return "每一份知识，都有位置。"
+        }
     }
 }
 
 struct SettingsWorkspace: View {
     @EnvironmentObject private var store: AppStore
-    @Environment(\.appTheme) private var theme
     @SceneStorage("settings.section") private var selectedSection = SettingsSection.appearance.rawValue
-    @ViewState private var accentSession: AccentEditingSession?
-
     private var section: SettingsSection { SettingsSection(rawValue: selectedSection) ?? .appearance }
-    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.9.1" }
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("设置").font(.system(size: 28, weight: .bold, design: .rounded))
-                        Text(section.subtitle).font(.callout).foregroundStyle(.secondary)
+        GeometryReader { geometry in
+            let inset: CGFloat = geometry.size.width < 720 ? 20 : 32
+            VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Text("设置").font(.system(size: 22, weight: .bold, design: .rounded))
+                        Spacer()
+                        if store.isBusy { ProgressView().controlSize(.small).help(store.status) }
                     }
-                    Spacer()
-                    if store.isBusy { ProgressView().controlSize(.small).help(store.status) }
+                    HStack(spacing: 4) {
+                        ForEach(SettingsSection.allCases) { item in
+                            SettingsTab(section: item, isSelected: section == item) { selectedSection = item.rawValue }
+                        }
+                    }.padding(5)
+                        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+                        .accessibilityElement(children: .contain).accessibilityLabel("设置分类")
                 }
-                Picker("设置分类", selection: $selectedSection) {
-                    ForEach(SettingsSection.allCases) { Text($0.title).tag($0.rawValue) }
-                }.pickerStyle(.segmented).labelsHidden().controlSize(.large)
+                .padding(.horizontal, inset).padding(.top, 20).padding(.bottom, 18)
+                .frame(maxWidth: 840).frame(maxWidth: .infinity)
+                Divider().opacity(0.6)
+                ScrollView {
+                    SettingsPage(section: section)
+                        .padding(.horizontal, inset).padding(.top, 26).padding(.bottom, 32)
+                        .frame(maxWidth: 840).frame(maxWidth: .infinity)
+                }.id(section)
             }
-            .padding(.horizontal, 28).padding(.vertical, 24)
-            .frame(maxWidth: 800).frame(maxWidth: .infinity)
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    switch section {
-                    case .appearance: appearancePage
-                    case .toolbar: toolbarPage
-                    case .library: libraryPage
-                    case .backup: backupPage
-                    case .mcp: MCPSettingsView()
-                    case .about: aboutPage
+        }.background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+private struct SettingsTab: View {
+    let section: SettingsSection
+    let isSelected: Bool
+    let action: () -> Void
+    @Environment(\.appTheme) private var theme
+    @ViewState private var hovered = false
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: section.symbol).font(.system(size: 16, weight: .medium)).frame(height: 18)
+                Text(section.title).font(.system(size: 12, weight: isSelected ? .semibold : .medium)).lineLimit(1)
+            }
+            .foregroundStyle(isSelected ? theme.ink : Color.secondary)
+            .frame(maxWidth: .infinity).frame(height: 54)
+            .background(isSelected ? Color(nsColor: .controlBackgroundColor) : Color.primary.opacity(hovered ? 0.045 : 0), in: RoundedRectangle(cornerRadius: 9))
+            .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(isSelected ? theme.ink.opacity(0.18) : .clear) }
+            .contentShape(RoundedRectangle(cornerRadius: 9))
+        }.buttonStyle(.plain).onHover { hovered = $0 }
+            .accessibilityLabel(section.title).accessibilityAddTraits(isSelected ? .isSelected : [])
+            .accessibilityIdentifier("settings.tab.\(section.rawValue)")
+    }
+}
+
+struct SettingsPage: View {
+    let section: SettingsSection
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.appTheme) private var theme
+    @ViewState private var accentSession: AccentEditingSession?
+    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发版" }
+    private var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            if section != .about {
+                HStack(spacing: 13) {
+                    SettingsIcon(symbol: section.symbol, size: 44)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(section.title).font(.system(size: 22, weight: .semibold, design: .rounded))
+                        Text(section.subtitle).font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                }
-                .padding(28).frame(maxWidth: 800).frame(maxWidth: .infinity)
-            }.id(section)
-        }
-        .background(Color(nsColor: .windowBackgroundColor))
-        .sheet(item: $accentSession) { session in
-            AccentColorEditor(sessionID: session.id).environmentObject(store)
-        }
+                    Spacer(minLength: 0)
+                }.padding(.bottom, 2)
+            }
+            switch section {
+            case .appearance: appearancePage
+            case .toolbar: ToolbarSettingsControl()
+            case .library: libraryPage
+            case .backup: backupPage
+            case .mcp: MCPSettingsView()
+            case .about: aboutPage
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+            .sheet(item: $accentSession) { session in
+                AccentColorEditor(sessionID: session.id).environmentObject(store)
+            }
     }
 
     private var appearancePage: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            SettingsPanel {
-                AppearanceSettingsControl().padding(18)
-            }.disabled(store.isBusy)
-            SettingsPanel {
-                AppearanceTransitionSettingsControl()
-            }.disabled(store.isBusy)
-            SettingsPanel {
-                SettingsControlRow("强调色", detail: "按钮、选中项与重点信息") {
-                    HStack(spacing: 10) {
-                        RoundedRectangle(cornerRadius: 6).fill(Color(hex: store.effectiveAccentHex))
-                            .frame(width: 25, height: 25)
-                            .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(.primary.opacity(0.12)) }
-                        Button("调整强调色…") {
-                            if let id = store.beginAccentPreview() { accentSession = AccentEditingSession(id: id) }
-                        }.disabled(store.accentPreviewID != nil)
+        VStack(alignment: .leading, spacing: 24) {
+            SettingsGroup(title: "显示模式") {
+                SettingsCard { AppearanceSettingsControl().padding(20) }
+            }
+            SettingsGroup(title: "个性配色") {
+                SettingsCard {
+                    SettingsRow(title: "强调色", detail: "用于按钮、选中项与重点信息。") {
+                        HStack(spacing: 10) {
+                            Circle().fill(Color(hex: store.effectiveAccentHex)).frame(width: 22, height: 22)
+                                .overlay { Circle().strokeBorder(.primary.opacity(0.12)) }.accessibilityHidden(true)
+                            Button("调整颜色…") {
+                                if let id = store.beginAccentPreview() { accentSession = AccentEditingSession(id: id) }
+                            }.disabled(store.accentPreviewID != nil)
+                        }
+                    }
+                    SettingsDivider()
+                    SettingsRow(title: "课程色边框", detail: "在侧栏显示每门课程的专属颜色。") {
+                        Toggle("课程色边框", isOn: Binding(
+                            get: { store.state.showCourseBorders },
+                            set: { enabled in store.perform { try store.repository.saveCourseBorders(enabled) } }
+                        )).labelsHidden().toggleStyle(.switch).tint(theme.controlAccent)
                     }
                 }
-                panelDivider
-                SettingsControlRow("课程色边框", detail: "在侧栏为课程显示各自的颜色") {
-                    Toggle("课程色边框", isOn: Binding(
-                        get: { store.state.showCourseBorders },
-                        set: { enabled in store.perform { try store.repository.saveCourseBorders(enabled) } }
-                    )).labelsHidden().toggleStyle(.switch).tint(theme.controlAccent)
-                }
-            }.disabled(store.isBusy)
-            Text("课程颜色在课程中单独调整，不随强调色改变。")
-                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
-        }
-    }
-
-    private var toolbarPage: some View {
-        SettingsPanel {
-            ToolbarSettingsControl()
+                SettingsNote(text: "课程颜色在课程中单独调整，不随强调色改变。")
+            }
+            SettingsGroup(title: "切换动效", detail: "在浅色与深色之间切换时，使用你喜欢的过渡效果。") {
+                SettingsCard { AppearanceTransitionSettingsControl() }
+            }
         }.disabled(store.isBusy)
     }
 
     private var libraryPage: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            SettingsPanel {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "externaldrive.fill").font(.system(size: 23))
-                            .foregroundStyle(theme.ink).frame(width: 44, height: 44)
-                            .background(theme.selection, in: RoundedRectangle(cornerRadius: 10))
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("当前资料库").font(.caption).foregroundStyle(.secondary)
-                            Text(store.repository.root.lastPathComponent).font(.headline).lineLimit(1)
+        VStack(alignment: .leading, spacing: 24) {
+            SettingsGroup(title: "当前资料库") {
+                SettingsCard {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack(spacing: 12) {
+                            SettingsIcon(symbol: "externaldrive.fill", size: 42)
+                            Text(store.repository.root.lastPathComponent).font(.system(size: 17, weight: .semibold)).lineLimit(2)
+                            Spacer(minLength: 8)
+                            SettingsBadge(title: "保存在本机", symbol: "internaldrive")
                         }
-                        Spacer()
-                        Button("在 Finder 中打开") { store.openURL(store.repository.root) }
-                    }
-                    Text(store.repository.root.path)
-                        .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
-                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack {
-                        Label("保存在本机", systemImage: "internaldrive").font(.caption).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("复制路径") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(store.repository.root.path, forType: .string)
-                        }.buttonStyle(.borderless)
-                    }
-                }.padding(18)
-                panelDivider
-                HStack(spacing: 0) {
-                    libraryCount(store.state.courses.count, title: "门课程")
-                    Divider().frame(height: 32)
-                    libraryCount(store.state.materials.count, title: "份资料")
-                    Divider().frame(height: 32)
-                    libraryCount(store.state.timetableTerms.count, title: "份课表")
-                }.padding(.vertical, 16)
+                        SettingsCode(text: store.repository.root.path)
+                        HStack(spacing: 12) {
+                            Button("在 Finder 中打开") { store.openURL(store.repository.root) }
+                            Button("复制路径") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(store.repository.root.path, forType: .string)
+                            }.buttonStyle(.borderless)
+                        }
+                    }.padding(20)
+                    SettingsDivider()
+                    HStack(spacing: 0) {
+                        libraryCount(store.state.courses.count, title: "门课程")
+                        Divider().frame(height: 30)
+                        libraryCount(store.state.materials.count, title: "份资料")
+                        Divider().frame(height: 30)
+                        libraryCount(store.state.tasks.count, title: "项计划")
+                        Divider().frame(height: 30)
+                        libraryCount(store.state.timetableTerms.count, title: "份课表")
+                    }.padding(.vertical, 18)
+                }
             }
-            SettingsPanel {
-                SettingsControlRow("打开其他资料库", detail: "切换到已有的课屿资料库") {
-                    Button("选择资料库…") { chooseLocation(migrate: false) }
-                }
-                panelDivider
-                SettingsControlRow("迁移资料库", detail: "复制到新位置，保留当前目录") {
-                    Button("迁移…") { chooseLocation(migrate: true) }
-                }
-            }.disabled(store.isBusy)
+            SettingsGroup(title: "位置与迁移") {
+                SettingsCard {
+                    SettingsRow(title: "打开其他资料库", detail: "选择一个已有资料库，切换当前工作内容。", symbol: "folder") {
+                        Button("选择资料库…") { chooseLocation(migrate: false) }
+                    }
+                    SettingsDivider()
+                    SettingsRow(title: "迁移到新位置", detail: "复制当前资料库，完成后切换到新目录。", symbol: "externaldrive.badge.plus") {
+                        Button("迁移资料库…") { chooseLocation(migrate: true) }
+                    }
+                }.disabled(store.isBusy)
+                SettingsNote(text: "迁移时请选择空文件夹。原资料库会保留，外部引用文件仍使用原路径。")
+            }
         }
     }
 
     private var backupPage: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            SettingsPanel {
-                SettingsControlRow("导出完整备份", detail: "保存课程、计划、入库资料与作业目录") {
-                    Button("导出备份…", action: backup).appPrimaryButton()
+        VStack(alignment: .leading, spacing: 24) {
+            SettingsGroup(title: "备份与恢复") {
+                SettingsCard {
+                    SettingsRow(title: "导出完整备份", detail: "将当前资料库保存为一个备份包。", symbol: "arrow.up.doc") {
+                        Button("导出备份…", action: backup).appPrimaryButton()
+                    }
+                    SettingsDivider()
+                    SettingsRow(title: "从备份恢复", detail: "用已有备份恢复课程、资料与计划。", symbol: "arrow.counterclockwise") {
+                        Button("恢复备份…", action: restore)
+                    }
+                }.disabled(store.isBusy)
+            }
+            SettingsGroup(title: "备份会保留什么") {
+                SettingsCard {
+                    SettingsRow(title: "资料库内容", detail: "课程、资料记录、计划、课表，以及外观和顶栏设置。", symbol: "square.stack.3d.up") { EmptyView() }
+                    SettingsDivider()
+                    SettingsRow(title: "库内文件", detail: "入库副本与作业目录，也包括移除记录后留在库内的文件。", symbol: "doc.on.doc") { EmptyView() }
                 }
-                panelDivider
-                SettingsControlRow("从备份恢复", detail: "恢复前会保留当前资料库的副本") {
-                    Button("恢复备份…", action: restore)
-                }
-            }.disabled(store.isBusy)
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "info.circle").foregroundStyle(.secondary)
-                Text("外部引用文件与挂载的作业目录只保存路径，请另行备份原文件。")
-                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }.padding(.horizontal, 4)
-            SettingsPanel {
-                SettingsDisclosure("备份范围与恢复说明") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("备份包含课程、资料记录、计划、课表、外观设置，以及资料库内的文件和作业目录。")
-                        Text("移除记录后仍留在库内的文件也会一起备份。")
-                        Text("恢复会替换当前课程、资料与计划；恢复前的内容保存在原资料库的 History 文件夹中。")
-                    }.font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                SettingsNote(text: "外部引用文件和挂载的作业目录仅保存路径。请单独备份这些原文件。", symbol: "arrow.up.right.square")
+            }
+            SettingsCard {
+                SettingsDisclosure(title: "恢复前的资料会怎样？", symbol: "clock.arrow.circlepath") {
+                    Text("恢复会替换当前课程、资料与计划。操作前的索引和文件会保留在原资料库的 History 文件夹中，便于找回。")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
     }
 
     private var aboutPage: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            SettingsPanel {
-                HStack(spacing: 16) {
-                    Image(systemName: "books.vertical.fill").font(.system(size: 36)).foregroundStyle(theme.ink)
-                        .frame(width: 64, height: 64).background(theme.selection, in: RoundedRectangle(cornerRadius: 15))
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("课屿").font(.system(size: 24, weight: .bold, design: .rounded))
-                        Text("Teachshelf for macOS · \(version)").font(.callout).foregroundStyle(.secondary)
-                        Text("课程资料与个人计划，留在本机。").font(.callout).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 24) {
+            SettingsCard {
+                VStack(alignment: .leading, spacing: 22) {
+                    HStack(spacing: 18) {
+                        SettingsIcon(symbol: "books.vertical.fill", size: 70)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("课屿").font(.system(size: 30, weight: .bold, design: .rounded))
+                            Text("Teachshelf for macOS").font(.callout).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Spacer(minLength: 0)
-                }.padding(20)
+                    Text("每一份知识，都有位置。")
+                        .font(.system(size: 17, weight: .medium))
+                    HStack(spacing: 8) {
+                        SettingsBadge(title: "版本 \(version)")
+                        Text("构建 \(build)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
             }
-            SettingsPanel {
-                SettingsInformationRow(symbol: "lock", title: "本机处理", detail: "资料、封面与搜索均在本机完成，无需课屿账户。")
-                panelDivider
-                SettingsInformationRow(symbol: "doc.badge.clock", title: "保留原文件", detail: "移除资料记录或删除课程时，实际文件仍会保留。")
-                panelDivider
-                SettingsInformationRow(symbol: "folder", title: "课程内的作业目录", detail: "作业默认保存在课程文件夹下，可在 Finder、编辑器和其他工具中继续管理。")
+            SettingsGroup(title: "为本机学习与整理而做") {
+                SettingsCard {
+                    SettingsRow(title: "资料留在本机", detail: "资料、封面与搜索均在本机处理，无需课屿账户。", symbol: "lock.shield") { EmptyView() }
+                    SettingsDivider()
+                    SettingsRow(title: "文件与目录属于你", detail: "课程资料和作业使用真实目录，可继续通过 Finder 或其他工具管理。", symbol: "folder") { EmptyView() }
+                    SettingsDivider()
+                    SettingsRow(title: "保留原文件", detail: "移除资料记录或删除课程时，实际文件仍会保留。", symbol: "doc.badge.clock") { EmptyView() }
+                }
             }
-            SettingsPanel {
-                SettingsDisclosure("资料的导入与浏览") {
+            SettingsCard {
+                SettingsDisclosure(title: "资料的导入与浏览", symbol: "books.vertical") {
                     Text("导入时可复制入库，或引用原文件。列表与封面视图在资料页右上角切换；预览使用 macOS 快速查看，打开文件使用系统默认应用。")
-                        .font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
     }
 
-    private var panelDivider: some View { Divider().padding(.horizontal, 18) }
-
     private func libraryCount(_ count: Int, title: String) -> some View {
-        VStack(spacing: 4) {
-            Text("\(count)").font(.system(size: 21, weight: .semibold, design: .rounded))
-            Text(title).font(.caption).foregroundStyle(.secondary)
+        VStack(spacing: 5) {
+            Text("\(count)").font(.system(size: 24, weight: .semibold, design: .rounded)).monospacedDigit()
+            Text(title).font(.system(size: 11)).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity)
     }
 

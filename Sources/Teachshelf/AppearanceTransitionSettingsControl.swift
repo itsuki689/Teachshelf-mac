@@ -17,9 +17,14 @@ struct AppearanceTransitionSettingsControl: View {
     private var durationText: String { String(format: "约 %.2f 秒", 0.74 / draft.speed) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Text("明暗过渡").font(.headline)
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("明暗过渡").font(.system(size: 13, weight: .medium))
+                    Text(draft.isEnabled ? "已开启，切换外观时播放" : "已关闭，保留以下偏好")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
                 Toggle("启用明暗过渡", isOn: Binding(get: { draft.isEnabled }, set: { enabled in
                     commitHex()
                     hexInput = draft.colorHex
@@ -33,7 +38,6 @@ struct AppearanceTransitionSettingsControl: View {
                 }))
                 .labelsHidden().toggleStyle(.switch).controlSize(.small).tint(theme.controlAccent)
                 .accessibilityIdentifier("appearance.transition.enabled")
-                Spacer()
                 Button {
                     guard draft.isEnabled, !reduceMotion, draft.colorMode != .solid || validHex else { return }
                     commitHex()
@@ -47,7 +51,9 @@ struct AppearanceTransitionSettingsControl: View {
                 .accessibilityIdentifier("appearance.transition.preview")
             }
 
-            VStack(alignment: .leading, spacing: 9) {
+            Divider().opacity(0.6)
+
+            VStack(alignment: .leading, spacing: 10) {
                 Text("铺开方向").font(.callout.weight(.medium))
                 HStack(spacing: 8) {
                     ForEach(AppearanceTransitionDirection.allCases) { direction in
@@ -155,7 +161,7 @@ struct AppearanceTransitionSettingsControl: View {
             .disabled(!draft.isEnabled).opacity(draft.isEnabled ? 1 : 0.6)
 
             HStack {
-                Text(durationText).font(.caption).foregroundStyle(.secondary)
+                Text(durationText).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 Spacer()
                 Button("恢复默认") {
                     draft = .default
@@ -166,7 +172,7 @@ struct AppearanceTransitionSettingsControl: View {
                 .accessibilityIdentifier("appearance.transition.reset")
             }
         }
-        .padding(18)
+        .padding(20)
         .dismissColorPanelAutomatically()
         .onAppear { synchronize() }
         .onChange(of: store.state.appearanceTransition) { _, _ in synchronize() }

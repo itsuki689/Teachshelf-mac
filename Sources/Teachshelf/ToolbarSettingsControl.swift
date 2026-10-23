@@ -13,117 +13,83 @@ struct ToolbarSettingsControl: View {
     private var canAddAction: Bool { settings.actions.count < ToolbarSettings.maximumActionCount }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                Text("操作胶囊").font(.headline)
-                Spacer()
-                Button("恢复默认") { save(.default) }
-                    .buttonStyle(.borderless).controlSize(.small)
-                    .disabled(settings == .default)
-                    .accessibilityIdentifier("settings.toolbar.reset")
-            }
-
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("预览").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Text("\(settings.actions.count) / \(ToolbarSettings.maximumActionCount)")
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                        .accessibilityLabel("已选择 \(settings.actions.count) 个图标，最多 \(ToolbarSettings.maximumActionCount) 个")
-                }
-                HStack {
-                    Spacer(minLength: 0)
-                    if settings.actions.isEmpty {
-                        Label("胶囊已隐藏", systemImage: "eye.slash")
-                            .font(.callout).foregroundStyle(.secondary)
-                    } else {
-                        HStack(spacing: 0) {
-                            ForEach(settings.actions) { action in
-                                Image(systemName: action.symbol)
-                                    .font(.system(size: 16, weight: action == .create ? .medium : .regular))
-                                    .frame(width: 36, height: 36)
-                                    .help(action.title)
-                            }
+        VStack(alignment: .leading, spacing: 24) {
+            SettingsGroup(title: "实时预览", detail: "图标按下方顺序从左到右显示，胶囊随数量自动伸缩。") {
+                SettingsCard {
+                    VStack(spacing: 18) {
+                        HStack {
+                            SettingsBadge(title: "\(settings.actions.count) / \(ToolbarSettings.maximumActionCount) 个图标")
+                                .accessibilityLabel("已选择 \(settings.actions.count) 个图标，最多 \(ToolbarSettings.maximumActionCount) 个")
+                            Spacer()
+                            Button("恢复默认") { save(.default) }
+                                .buttonStyle(.borderless).controlSize(.small)
+                                .disabled(settings == .default)
+                                .accessibilityIdentifier("settings.toolbar.reset")
                         }
-                        .foregroundStyle(.primary)
-                        .background(Color(nsColor: .windowBackgroundColor), in: Capsule())
-                        .overlay { Capsule().strokeBorder(Color.secondary.opacity(0.24), lineWidth: 0.7) }
-                        .shadow(color: .black.opacity(theme.isDark ? 0.12 : 0.05), radius: 2, y: 1)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("胶囊预览")
-                        .accessibilityValue(settings.actions.map(\.title).joined(separator: "、"))
-                    }
-                    Spacer(minLength: 0)
+                        HStack(spacing: 18) {
+                            HStack(spacing: 5) { ForEach(0..<3) { _ in Circle().fill(.secondary.opacity(0.25)).frame(width: 7, height: 7) } }
+                                .accessibilityHidden(true)
+                            RoundedRectangle(cornerRadius: 8).fill(.primary.opacity(0.045)).frame(maxWidth: .infinity).frame(height: 26)
+                                .accessibilityHidden(true)
+                            capsulePreview
+                        }.padding(16).frame(height: 78)
+                            .background(.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 10))
+                            .accessibilityIdentifier("settings.toolbar.preview")
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: settings.actions)
+                    }.padding(20)
                 }
-                .frame(height: 48)
-                .accessibilityIdentifier("settings.toolbar.preview")
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: settings.actions)
-                Text(settings.actions.isEmpty ? "按 ⌘, 打开设置，即可重新添加图标。" : "胶囊随图标数量自动伸缩，按下面的顺序从左到右显示。")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(14)
-            .background(Color.secondary.opacity(theme.isDark ? 0.07 : 0.035), in: RoundedRectangle(cornerRadius: 9))
-
-            VStack(alignment: .leading, spacing: 9) {
-                Text("已选图标").font(.callout.weight(.medium))
-                if settings.actions.isEmpty {
-                    Text("从下方添加常用操作。")
-                        .font(.callout).foregroundStyle(.secondary)
-                        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.secondary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
-                } else {
-                    VStack(spacing: 0) {
+            SettingsGroup(title: "已选操作", detail: "使用箭头调整顺序，点击减号移除。") {
+                SettingsCard {
+                    if settings.actions.isEmpty {
+                        SettingsRow(title: "尚未选择操作", detail: "从下方添加图标，即可重新显示顶栏胶囊。", symbol: "plus.circle") { EmptyView() }
+                    } else {
                         ForEach(Array(settings.actions.enumerated()), id: \.element) { index, action in
                             selectedRow(action, at: index)
-                            if index < settings.actions.count - 1 {
-                                Divider().padding(.horizontal, 12)
-                            }
+                            if index < settings.actions.count - 1 { SettingsDivider() }
                         }
                     }
-                    .background(Color.secondary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
-                    .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary, lineWidth: 1) }
                 }
             }
-
-            VStack(alignment: .leading, spacing: 9) {
-                HStack {
-                    Text("添加图标").font(.callout.weight(.medium))
-                    Spacer()
-                    if !canAddAction {
-                        Text("已达 \(ToolbarSettings.maximumActionCount) 个上限")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+            SettingsGroup(title: "添加操作", detail: canAddAction ? "选择你常用的功能，最多显示 \(ToolbarSettings.maximumActionCount) 个。" : "已达 \(ToolbarSettings.maximumActionCount) 个上限，移除一个操作后可继续添加。") {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) {
                     ForEach(availableActions) { action in
                         Button { add(action) } label: {
-                            HStack(spacing: 9) {
-                                Image(systemName: action.symbol).font(.system(size: 15)).frame(width: 21)
-                                Text(action.title).font(.callout).lineLimit(1)
-                                Spacer(minLength: 0)
-                                Image(systemName: "plus").font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 10).frame(maxWidth: .infinity, minHeight: 38)
-                            .background(Color.secondary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
-                            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary, lineWidth: 1) }
-                            .contentShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain).foregroundStyle(.primary)
-                        .disabled(!canAddAction)
-                        .opacity(canAddAction ? 1 : 0.5)
-                        .accessibilityLabel("添加\(action.title)")
-                        .accessibilityIdentifier("settings.toolbar.add.\(action.rawValue)")
+                            HStack(spacing: 12) {
+                                SettingsIcon(symbol: action.symbol, size: 30)
+                                Text(action.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                                Spacer(minLength: 4)
+                                Image(systemName: "plus.circle").font(.system(size: 16)).foregroundStyle(theme.ink)
+                            }.padding(14).frame(maxWidth: .infinity, minHeight: 58)
+                                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 11))
+                                .overlay { RoundedRectangle(cornerRadius: 11).strokeBorder(.primary.opacity(0.07)) }
+                                .contentShape(RoundedRectangle(cornerRadius: 11))
+                        }.buttonStyle(.plain).foregroundStyle(.primary)
+                            .disabled(!canAddAction).opacity(canAddAction ? 1 : 0.5)
+                            .accessibilityLabel("添加\(action.title)")
+                            .accessibilityIdentifier("settings.toolbar.add.\(action.rawValue)")
                     }
                 }
-                Text("按 ⌘, 可随时打开设置。")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .padding(.top, 2)
+                SettingsNote(text: "即使移除设置图标，也可随时按 ⌘, 打开设置。", symbol: "keyboard")
             }
+        }.disabled(store.isBusy)
+    }
+
+    @ViewBuilder private var capsulePreview: some View {
+        if settings.actions.isEmpty {
+            Label("胶囊已隐藏", systemImage: "eye.slash").font(.caption).foregroundStyle(.secondary)
+        } else {
+            HStack(spacing: 0) {
+                ForEach(settings.actions) { action in
+                    Image(systemName: action.symbol).font(.system(size: 16, weight: .regular)).frame(width: 34, height: 36)
+                }
+            }.foregroundStyle(.primary)
+                .background(Color(nsColor: .controlBackgroundColor), in: Capsule())
+                .overlay { Capsule().strokeBorder(.primary.opacity(0.1)) }
+                .shadow(color: .black.opacity(theme.isDark ? 0.12 : 0.05), radius: 3, y: 2)
+                .accessibilityElement(children: .ignore).accessibilityLabel("胶囊预览")
+                .accessibilityValue(settings.actions.map(\.title).joined(separator: "、"))
         }
-        .padding(18)
-        .disabled(store.isBusy)
     }
 
     private func selectedRow(_ action: ToolbarAction, at index: Int) -> some View {
@@ -155,7 +121,7 @@ struct ToolbarSettingsControl: View {
             .accessibilityIdentifier("settings.toolbar.remove.\(action.rawValue)")
         }
         .buttonStyle(.borderless).controlSize(.small)
-        .padding(.horizontal, 10).frame(height: 42)
+        .padding(.horizontal, 20).frame(height: 52)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings.toolbar.selected.\(action.rawValue)")
     }
