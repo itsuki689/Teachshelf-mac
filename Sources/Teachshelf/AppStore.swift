@@ -66,6 +66,26 @@ private struct PlanUndo {
         teachingSession = value; teachingSessionRoot = repository.root
         return value
     }
+
+    @discardableResult
+    func presentToolbarTeachingUpdate(in expected: LibraryRepository) -> Bool {
+        guard canPresentToolbarTeachingUpdate(in: expected), beforeLeavingMaterial?() != false else { return false }
+        // A save confirmation runs a nested event loop; its original eligibility may have changed.
+        guard canPresentToolbarTeachingUpdate(in: expected) else { return false }
+        teachingUpdateAll = true
+        teachingConnectionToOpen = nil
+        showingTeachingWebsite = true
+        return true
+    }
+
+    private func canPresentToolbarTeachingUpdate(in expected: LibraryRepository) -> Bool {
+        guard repository === expected, !isBusy, !state.teachingConnections.isEmpty,
+              !showingCourseEditor, !showingImport, !showingTeachingWebsite,
+              toolbarPlanDraft == nil, importPanel == nil else { return false }
+        let parent = NSApp.keyWindow ?? NSApp.mainWindow
+        return parent?.attachedSheet == nil && parent?.sheetParent == nil
+    }
+
     @Published var showingWorkspaceSearch = false
     @Published var workspaceSearchQuery = ""
     @Published var toolbarPlanDraft: ToolbarPlanDraft?

@@ -30,7 +30,7 @@ struct WorkspaceToolbarActions: View {
     @Environment(\.controlActiveState) private var activeState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ViewState private var settingsRotation: Double = 0
-    @ViewState private var updateRotation: Double = 0
+    @StateObject private var updateFeedback = ToolbarUpdateFeedback()
     @ViewState private var importTrigger = 0
     @ViewState private var createRotation: Double = 0
     @ViewState private var showingCreateMenu = false
@@ -64,19 +64,21 @@ struct WorkspaceToolbarActions: View {
         .disabled(store.isBusy)
         .onChange(of: actions) { _, value in
             if !value.contains(.create) { showingCreateMenu = false }
+            if !value.contains(.update) { updateFeedback.cancel() }
         }
+        .onChange(of: store.workspaceLocation) { _, _ in updateFeedback.cancel() }
         .onChange(of: showingCreateMenu) { _, expanded in
             withAnimation(reduceMotion ? nil : .easeOut(duration: expanded ? 0.72 : 0.18)) {
                 // Three full turns plus 45 degrees; closing completes the final quarter-turn.
                 createRotation += expanded ? 1_125 : 315
             }
         }
-        .onDisappear { showingCreateMenu = false }
+        .onDisappear { showingCreateMenu = false; updateFeedback.cancel() }
     }
 
     @ViewBuilder private func actionButton(_ action: ToolbarAction) -> some View {
         if action == .create {
-            Button { showingCreateMenu.toggle() } label: {
+            Button(action: toggleCreateMenu) {
                 ToolbarPlusArtwork()
                     .stroke(style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
                     .frame(width: 18, height: 18)
@@ -90,7 +92,7 @@ struct WorkspaceToolbarActions: View {
             .accessibilityValue(showingCreateMenu ? "已展开" : "已收起")
             .accessibilityIdentifier("workspace.create")
             .accessibilityAddTraits(.isButton)
-            .accessibilityAction { if !store.isBusy { showingCreateMenu.toggle() } }
+            .accessibilityAction { toggleCreateMenu() }
             .popover(isPresented: $showingCreateMenu, arrowEdge: .bottom) {
                 VStack(spacing: 2) {
                     createMenuRow("新建课程…", symbol: "books.vertical") {
@@ -134,8 +136,7 @@ struct WorkspaceToolbarActions: View {
         switch action {
         case .update:
             Image(systemName: action.symbol)
-                .rotationEffect(.degrees(updateRotation))
-                .animation(reduceMotion ? nil : .linear(duration: 0.4), value: updateRotation)
+                .rotationEffect(.degrees(updateFeedback.rotation))
         case .settings:
             Image(systemName: action.symbol)
                 .rotationEffect(.degrees(settingsRotation))
@@ -159,11 +160,14 @@ struct WorkspaceToolbarActions: View {
 
     private func activate(_ action: ToolbarAction) {
         guard !store.isBusy else { return }
+        if action != .update { updateFeedback.cancel() }
         switch action {
         case .update:
-            guard !store.state.teachingConnections.isEmpty, store.beforeLeavingMaterial?() != false else { return }
-            if !reduceMotion { updateRotation += 360 }
-            store.teachingUpdateAll = true; store.teachingConnectionToOpen = nil; store.showingTeachingWebsite = true
+            guard !store.state.teachingConnections.isEmpty, !store.showingTeachingWebsite else { return }
+            let repository = store.repository
+            updateFeedback.start(reduceMotion: reduceMotion) {
+                store.presentToolbarTeachingUpdate(in: repository)
+            }
         case .settings:
             let previous = store.workspaceLocation
             if store.navigation == .settings {
@@ -183,6 +187,12 @@ struct WorkspaceToolbarActions: View {
         case .pendingTasks: store.navigate(to: .tasks)
         case .create: break
         }
+    }
+
+    private func toggleCreateMenu() {
+        guard !store.isBusy else { return }
+        updateFeedback.cancel()
+        showingCreateMenu.toggle()
     }
 
     private func createMenuRow(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
