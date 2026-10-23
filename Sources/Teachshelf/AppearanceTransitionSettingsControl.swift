@@ -21,7 +21,7 @@ struct AppearanceTransitionSettingsControl: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("明暗过渡").font(.system(size: 13, weight: .medium))
-                    Text(draft.isEnabled ? "已开启，切换外观时播放" : "已关闭，保留以下偏好")
+                    Text(draft.isEnabled ? "已开启，切换外观时播放" : "已关闭，启用后展开配置")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
@@ -51,125 +51,124 @@ struct AppearanceTransitionSettingsControl: View {
                 .accessibilityIdentifier("appearance.transition.preview")
             }
 
-            Divider().opacity(0.6)
+            if draft.isEnabled {
+                Divider().opacity(0.6)
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("铺开方向").font(.callout.weight(.medium))
-                HStack(spacing: 8) {
-                    ForEach(AppearanceTransitionDirection.allCases) { direction in
-                        Button {
-                            draft.direction = direction
-                            commitHex()
-                            persistDraft()
-                        } label: {
-                            VStack(spacing: 7) {
-                                Image(systemName: direction.symbol).font(.system(size: 16, weight: .medium))
-                                Text(direction.title).font(.callout)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("铺开方向").font(.callout.weight(.medium))
+                    HStack(spacing: 8) {
+                        ForEach(AppearanceTransitionDirection.allCases) { direction in
+                            Button {
+                                draft.direction = direction
+                                commitHex()
+                                persistDraft()
+                            } label: {
+                                VStack(spacing: 7) {
+                                    Image(systemName: direction.symbol).font(.system(size: 16, weight: .medium))
+                                    Text(direction.title).font(.callout)
+                                }
+                                .frame(maxWidth: .infinity).frame(height: 58)
+                                .foregroundStyle(draft.direction == direction ? theme.ink : Color.primary)
+                                .background(draft.direction == direction ? theme.selection : Color.secondary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 8).strokeBorder(
+                                        draft.direction == direction ? theme.ink.opacity(0.65) : Color.secondary.opacity(0.18), lineWidth: 1)
+                                }
+                                .contentShape(RoundedRectangle(cornerRadius: 8))
                             }
-                            .frame(maxWidth: .infinity).frame(height: 58)
-                            .foregroundStyle(draft.direction == direction ? theme.ink : Color.primary)
-                            .background(draft.direction == direction ? theme.selection : Color.secondary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8).strokeBorder(
-                                    draft.direction == direction ? theme.ink.opacity(0.65) : Color.secondary.opacity(0.18), lineWidth: 1)
-                            }
-                            .contentShape(RoundedRectangle(cornerRadius: 8))
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(direction.title)铺开")
+                            .accessibilityValue(draft.direction == direction ? "已选中" : "未选中")
+                            .accessibilityIdentifier("appearance.transition.direction.\(direction.rawValue)")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("\(direction.title)铺开")
-                        .accessibilityValue(draft.direction == direction ? "已选中" : "未选中")
-                        .accessibilityIdentifier("appearance.transition.direction.\(direction.rawValue)")
                     }
                 }
-            }
-            .disabled(!draft.isEnabled).opacity(draft.isEnabled ? 1 : 0.6)
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("速度").font(.callout.weight(.medium))
-                    Spacer()
-                    Text(String(format: "%.1f×", draft.speed)).font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("appearance.transition.speed.value")
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("速度").font(.callout.weight(.medium))
+                        Spacer()
+                        Text(String(format: "%.1f×", draft.speed)).font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("appearance.transition.speed.value")
+                    }
+                    HStack(spacing: 10) {
+                        Text("慢").font(.caption).foregroundStyle(.secondary)
+                        Slider(value: Binding(get: { draft.speed }, set: { value in
+                            draft.speed = value
+                            if !editingSpeed { scheduleSave() }
+                        }), in: 0.5...2, step: 0.1, onEditingChanged: { editing in
+                            editingSpeed = editing
+                            if editing { cancelPendingSave() }
+                            else { persistDraft() }
+                        })
+                        .labelsHidden()
+                        .accessibilityLabel("明暗过渡速度")
+                        .accessibilityIdentifier("appearance.transition.speed")
+                        Text("快").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
-                HStack(spacing: 10) {
-                    Text("慢").font(.caption).foregroundStyle(.secondary)
-                    Slider(value: Binding(get: { draft.speed }, set: { value in
-                        draft.speed = value
-                        if !editingSpeed { scheduleSave() }
-                    }), in: 0.5...2, step: 0.1, onEditingChanged: { editing in
-                        editingSpeed = editing
-                        if editing { cancelPendingSave() }
-                        else { persistDraft() }
-                    })
-                    .labelsHidden()
-                    .accessibilityLabel("明暗过渡速度")
-                    .accessibilityIdentifier("appearance.transition.speed")
-                    Text("快").font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            .disabled(!draft.isEnabled).opacity(draft.isEnabled ? 1 : 0.6)
 
-            VStack(alignment: .leading, spacing: 11) {
+                VStack(alignment: .leading, spacing: 11) {
+                    HStack {
+                        Text("颜色").font(.callout.weight(.medium))
+                        Spacer()
+                        Picker("过渡配色", selection: Binding(get: { draft.colorMode }, set: { mode in
+                            commitHex()
+                            draft.colorMode = mode
+                            hexInput = draft.colorHex
+                            persistDraft()
+                        })) {
+                            ForEach(AppearanceTransitionColorMode.allCases) { mode in Text(mode.title).tag(mode) }
+                        }
+                        .labelsHidden().pickerStyle(.segmented).frame(width: 190)
+                        .accessibilityIdentifier("appearance.transition.palette")
+                    }
+                    if draft.colorMode == .solid {
+                        HStack(spacing: 12) {
+                            ColorPicker("过渡颜色", selection: Binding(get: { Color(hex: draft.colorHex) }, set: { color in
+                                draft.colorHex = color.hexString
+                                hexInput = draft.colorHex
+                                scheduleSave()
+                            }), supportsOpacity: false)
+                            .accessibilityIdentifier("appearance.transition.color")
+                            Spacer(minLength: 0)
+                            Text("HEX").font(.caption).foregroundStyle(.secondary)
+                            TextField("#808080", text: $hexInput)
+                                .font(.system(.callout, design: .monospaced))
+                                .textFieldStyle(.roundedBorder).frame(width: 108)
+                                .focused($hexFocused)
+                                .accessibilityLabel("过渡颜色 HEX")
+                                .accessibilityIdentifier("appearance.transition.hex")
+                                .onSubmit { commitHex(); persistDraft() }
+                        }
+                        if !validHex {
+                            Text("请输入六位 HEX 颜色，例如 #808080。")
+                                .font(.caption).foregroundStyle(.red)
+                        }
+                    } else {
+                        HStack(spacing: 3) {
+                            ForEach(AppearanceTransitionSettings.rainbowHexes, id: \.self) { hex in
+                                RoundedRectangle(cornerRadius: 3).fill(Color(hex: hex))
+                                    .frame(maxWidth: .infinity).frame(height: 24)
+                            }
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("彩虹十色预览")
+                    }
+                }
+
                 HStack {
-                    Text("颜色").font(.callout.weight(.medium))
+                    Text(durationText).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     Spacer()
-                    Picker("过渡配色", selection: Binding(get: { draft.colorMode }, set: { mode in
-                        commitHex()
-                        draft.colorMode = mode
+                    Button("恢复默认") {
+                        draft = .default
                         hexInput = draft.colorHex
                         persistDraft()
-                    })) {
-                        ForEach(AppearanceTransitionColorMode.allCases) { mode in Text(mode.title).tag(mode) }
                     }
-                    .labelsHidden().pickerStyle(.segmented).frame(width: 190)
-                    .accessibilityIdentifier("appearance.transition.palette")
+                    .buttonStyle(.plain).font(.caption).foregroundStyle(theme.ink)
+                    .accessibilityIdentifier("appearance.transition.reset")
                 }
-                if draft.colorMode == .solid {
-                    HStack(spacing: 12) {
-                        ColorPicker("过渡颜色", selection: Binding(get: { Color(hex: draft.colorHex) }, set: { color in
-                            draft.colorHex = color.hexString
-                            hexInput = draft.colorHex
-                            scheduleSave()
-                        }), supportsOpacity: false)
-                        .accessibilityIdentifier("appearance.transition.color")
-                        Spacer(minLength: 0)
-                        Text("HEX").font(.caption).foregroundStyle(.secondary)
-                        TextField("#808080", text: $hexInput)
-                            .font(.system(.callout, design: .monospaced))
-                            .textFieldStyle(.roundedBorder).frame(width: 108)
-                            .focused($hexFocused)
-                            .accessibilityLabel("过渡颜色 HEX")
-                            .accessibilityIdentifier("appearance.transition.hex")
-                            .onSubmit { commitHex(); persistDraft() }
-                    }
-                    if !validHex {
-                        Text("请输入六位 HEX 颜色，例如 #808080。")
-                            .font(.caption).foregroundStyle(.red)
-                    }
-                } else {
-                    HStack(spacing: 3) {
-                        ForEach(AppearanceTransitionSettings.rainbowHexes, id: \.self) { hex in
-                            RoundedRectangle(cornerRadius: 3).fill(Color(hex: hex))
-                                .frame(maxWidth: .infinity).frame(height: 24)
-                        }
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("彩虹十色预览")
-                }
-            }
-            .disabled(!draft.isEnabled).opacity(draft.isEnabled ? 1 : 0.6)
-
-            HStack {
-                Text(durationText).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                Spacer()
-                Button("恢复默认") {
-                    draft = .default
-                    hexInput = draft.colorHex
-                    persistDraft()
-                }
-                .buttonStyle(.plain).font(.caption).foregroundStyle(theme.ink)
-                .accessibilityIdentifier("appearance.transition.reset")
             }
         }
         .padding(20)
