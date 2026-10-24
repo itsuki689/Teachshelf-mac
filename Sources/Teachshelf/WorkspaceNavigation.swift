@@ -48,6 +48,9 @@ extension AppStore {
     }
 
     func applyWorkspaceLocation(_ location: WorkspaceLocation) {
+        if location.page == .assistant, navigation != .assistant {
+            assistant.captureContext(courseID: currentCourseID ?? workspaceCourseID, materialIDs: selectedMaterialIDs)
+        }
         if case .course(let id) = location.page {
             workspaceCourseID = id
             if semester != "全部学期", let course = state.courses.first(where: { $0.id == id }), course.semester != semester {

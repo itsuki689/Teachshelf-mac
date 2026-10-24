@@ -11,8 +11,6 @@ import TeachshelfMCPKit
     private var server: MCPHTTPServer?
     private var restartTask: Task<Void, Never>?
     private var generation = UUID()
-    private var service: PlanMCPService?
-    private var libraryService: LibraryMCPService?
 
     init(store: AppStore, configURL: URL = MCPConfiguration.defaultURL) {
         self.store = store; self.configURL = configURL
@@ -57,41 +55,11 @@ import TeachshelfMCPKit
     func handle(_ data: Data, generation expected: UUID? = nil) async -> Data? {
         await MCPProtocol.responseAsync(to: data) { name, arguments in
             guard !Task.isCancelled, let store, configuration?.enabled == true, expected == nil || generation == expected else { throw PlanMCPError("MCP 已关闭或连接配置已更新，请重新连接。") }
-            guard !store.isBusy else { throw PlanMCPError("课屿正在保存或切换资料库，请稍后重试。") }
-            let repository = store.repository
-            if service?.repository !== repository { service = PlanMCPService(repository: repository) }
-            if libraryService?.repository !== repository { libraryService = LibraryMCPService(repository: repository) }
-            let service = service!, libraryService = libraryService!
-            let isLibrary = LibraryMCPTools.names.contains(name), writes = TeachshelfMCPTools.writeNames.contains(name)
-            if writes {
-                if isLibrary {
-                    guard !store.showingCourseEditor, !store.showingImport, !store.showingTeachingWebsite,
-                          store.editingMaterialCounts.isEmpty, store.editingFolderCounts.isEmpty, store.editingPlanCounts.isEmpty,
-                          store.materialFolderSheetCount == 0,
-                          store.toolbarPlanDraft == nil else { throw PlanMCPError("请先保存并关闭课程、资料、文件夹或计划编辑窗口，再执行课程资料修改。") }
-                } else {
-                    guard service.affectedIDs(name: name, arguments: arguments).isDisjoint(with: Set(store.editingPlanCounts.keys)) else { throw PlanMCPError("该计划正在课屿编辑窗口中打开，请先保存或关闭编辑窗口后重试。") }
-                }
+            let result = try await store.toolExecutor.call(name: name, arguments: arguments)
+            if result["changed"] as? Bool == true {
+                lastAction = "\(Date().formatted(date: .omitted, time: .standard)) · \(name.replacingOccurrences(of: "teachshelf_", with: ""))"
             }
-            let before = store.repository.state.tasks
-            // Physical directory transactions run off the main actor; busy serializes UI/MCP writes.
-            store.isBusy = true
-            defer { store.isBusy = false }
-            do {
-                let result = try await Task.detached(priority: .userInitiated) {
-                    if isLibrary { return try libraryService.call(name: name, arguments: arguments) }
-                    var result = try service.call(name: name, arguments: arguments)
-                    if name == "teachshelf_context" { result.merge(try libraryService.context()) { _, value in value } }
-                    return result
-                }.value
-                store.reload()
-                if writes, result["changed"] as? Bool == true {
-                    if !isLibrary { store.recordPlanChange(before: before, label: "MCP 修改计划") }
-                    store.status = isLibrary ? "MCP 课程资料修改已保存" : "MCP 修改已保存，可撤销"
-                    lastAction = "\(Date().formatted(date: .omitted, time: .standard)) · \(name.replacingOccurrences(of: "teachshelf_", with: ""))"
-                }
-                return result
-            } catch { store.reload(); throw error }
+            return result
         }
     }
     func copyStdioConfiguration() {

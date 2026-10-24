@@ -50,7 +50,7 @@ public enum MCPProtocol {
         case "initialize":
             guard let requested = params["protocolVersion"] as? String, params["capabilities"] is [String: Any], params["clientInfo"] is [String: Any] else { return rpcError(-32602, "Invalid initialize parameters", id: id) }
             result = ["protocolVersion": versions.contains(requested) ? requested : versions[0], "capabilities": ["tools": ["listChanged": false]],
-                      "serverInfo": ["name": "teachshelf", "version": "1.14.0"], "instructions": "先调用 teachshelf_context。支持计划、课程、资料信息和物理文件夹操作。计划编辑需 revision；课程资料写入需 library_revision。不读取资料文件正文。"]
+                      "serverInfo": ["name": "teachshelf", "version": "1.15.0"], "instructions": "先调用 teachshelf_context。支持计划、课程、资料信息和物理文件夹操作。计划编辑需 revision；课程资料写入需 library_revision。不读取资料文件正文。"]
         case "ping": result = [:]
         case "tools/list":
             guard params["cursor"] == nil else { return rpcError(-32602, "This tool list has no cursor", id: id) }

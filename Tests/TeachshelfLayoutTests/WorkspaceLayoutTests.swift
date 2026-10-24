@@ -63,7 +63,7 @@ import TeachshelfCore
         for size in [NSSize(width: 1260, height: 800), NSSize(width: 1020, height: 680)] {
             window.setContentSize(size)
             let originalFrame = window.frame
-            for page in [SidebarSelection.all, .schedule, .tasks, .homework, .settings, .course(course.id), .all] {
+            for page in [SidebarSelection.all, .schedule, .tasks, .homework, .settings, .assistant, .course(course.id), .all] {
                 store.navigate(to: page)
                 RunLoop.main.run(until: Date().addingTimeInterval(0.05))
                 host.layoutSubtreeIfNeeded()

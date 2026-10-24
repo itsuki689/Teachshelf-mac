@@ -64,6 +64,7 @@ import AppKit
         }
         guard store?.beforeLeavingMaterial?() != false else { return .terminateCancel }
         guard let store else { return .terminateNow }
+        store.assistant.stop()
         waitingToQuit = true
         Task { [weak self] in
             await store.flushAppearance()

@@ -19,6 +19,7 @@ struct ContentView: View {
                             case .schedule: ScheduleWorkspace()
                             case .homework: HomeworkWorkspace()
                             case .settings: SettingsWorkspace()
+                            case .assistant: AIChatWorkspace(controller: store.assistant)
                             default: LibraryWorkspace()
                             }
                         }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -109,6 +110,7 @@ struct ContentView: View {
                 .accessibilityElement(children: .contain).accessibilityLabel("快捷入口")
 
             navRow("计划", "calendar", .schedule, compact: true).padding(.horizontal, 14)
+            navRow("AI 助手", "sparkles", .assistant, compact: true).padding(.horizontal, 14)
             Divider().padding(.horizontal, 20).padding(.vertical, 12)
             HStack(spacing: 8) {
                 SolidChoiceMenu("课程状态", selection: $store.courseArchiveFilter,
@@ -163,7 +165,7 @@ struct ContentView: View {
     }
 
     private func moveSidebar(_ offset: Int) {
-        let destinations: [SidebarSelection] = [.all, .favorites, .recent, .unassigned, .homework, .tasks, .schedule]
+        let destinations: [SidebarSelection] = [.all, .favorites, .recent, .unassigned, .homework, .tasks, .schedule, .assistant]
             + store.sidebarCourses.map { .course($0.id) }
         let index = store.navigation.flatMap { destinations.firstIndex(of: $0) } ?? 0
         store.navigate(to: destinations[min(max(index + offset, 0), destinations.count - 1)])

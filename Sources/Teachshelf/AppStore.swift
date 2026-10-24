@@ -3,7 +3,7 @@ import SwiftUI
 import TeachshelfCore
 
 enum SidebarSelection: Hashable {
-    case all, favorites, recent, unassigned, course(UUID), homework, tasks, schedule, settings
+    case all, favorites, recent, unassigned, course(UUID), homework, tasks, schedule, assistant, settings
     var isLibrary: Bool {
         switch self { case .all, .favorites, .recent, .unassigned, .course: return true; default: return false }
     }
@@ -47,6 +47,8 @@ private struct PlanUndo {
     @Published var status = "就绪"
     @Published var errorMessage: String?
     var mcpController: MCPController?
+    lazy var toolExecutor = AppToolExecutor(store: self)
+    lazy var assistant = AIChatController(store: self)
     var editingMaterialCounts: [UUID: Int] = [:]
     var editingFolderCounts: [UUID: Int] = [:]
     var materialFolderSheetCount = 0
@@ -295,6 +297,7 @@ private struct PlanUndo {
         case .homework: return "作业文件夹"
         case .tasks: return "待完成计划"
         case .schedule: return "计划"
+        case .assistant: return "AI 助手"
         case .settings: return "设置"
         default: return "全部资料"
         }
@@ -451,6 +454,7 @@ private struct PlanUndo {
 
     func changeLibrary(to target: URL, migrate: Bool) async {
         guard !isBusy else { return }
+        assistant.reset()
         let previousImportPanel = importPanel
         importPanel = nil
         previousImportPanel?.cancel(nil)

@@ -39,6 +39,7 @@ mkdir -p "$STAGED_APP/Contents/MacOS" "$STAGED_APP/Contents/Resources"
 cp "$PROJECT_DIR/.build/release/Teachshelf" "$STAGED_APP/Contents/MacOS/Teachshelf"
 cp "$PROJECT_DIR/.build/release/TeachshelfMCP" "$STAGED_APP/Contents/MacOS/TeachshelfMCP"
 cp "$PROJECT_DIR/docs/MCP.md" "$STAGED_APP/Contents/Resources/MCP.md"
+cp "$PROJECT_DIR/docs/AI.md" "$STAGED_APP/Contents/Resources/AI.md"
 cp "$PROJECT_DIR/Resources/Info.plist" "$STAGED_APP/Contents/Info.plist"
 cp "$PROJECT_DIR/Resources/AppIcon.icns" "$STAGED_APP/Contents/Resources/AppIcon.icns"
 if [[ -d "$PROJECT_DIR/Resources/Timetable" ]]; then
