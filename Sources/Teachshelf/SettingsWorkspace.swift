@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 import TeachshelfCore
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, toolbar, library, backup, mcp, about
+    case appearance, toolbar, library, backup, assistant, mcp, about
     var id: Self { self }
     var title: String {
         switch self {
@@ -12,6 +12,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .toolbar: return "顶栏"
         case .library: return "资料库"
         case .backup: return "备份"
+        case .assistant: return "AI 助手"
         case .mcp: return "MCP"
         case .about: return "关于"
         }
@@ -22,6 +23,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .toolbar: return "rectangle.topthird.inset.filled"
         case .library: return "externaldrive"
         case .backup: return "clock.arrow.circlepath"
+        case .assistant: return "sparkles"
         case .mcp: return "point.3.connected.trianglepath.dotted"
         case .about: return "info.circle"
         }
@@ -32,7 +34,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .toolbar: return "把常用操作放在手边，按你的习惯排列。"
         case .library: return "查看本机资料，管理资料库的位置。"
         case .backup: return "保存一份完整副本，让资料随时可以恢复。"
-        case .mcp: return "连接 AI 客户端，管理计划、课程与资料。"
+        case .assistant: return "连接模型，在课屿中用自然语言安排计划、管理资料。"
+        case .mcp: return "向外部客户端提供课屿工具，连接计划、课程与资料。"
         case .about: return "每一份知识，都有位置。"
         }
     }
@@ -40,8 +43,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
 struct SettingsWorkspace: View {
     @EnvironmentObject private var store: AppStore
-    @SceneStorage("settings.section") private var selectedSection = SettingsSection.appearance.rawValue
-    private var section: SettingsSection { SettingsSection(rawValue: selectedSection) ?? .appearance }
+    private var section: SettingsSection { store.settingsSection }
 
     var body: some View {
         GeometryReader { geometry in
@@ -55,7 +57,7 @@ struct SettingsWorkspace: View {
                     }
                     HStack(spacing: 4) {
                         ForEach(SettingsSection.allCases) { item in
-                            SettingsTab(section: item, isSelected: section == item) { selectedSection = item.rawValue }
+                            SettingsTab(section: item, isSelected: section == item) { store.settingsSection = item }
                         }
                     }.padding(5)
                         .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
@@ -123,6 +125,7 @@ struct SettingsPage: View {
             case .toolbar: ToolbarSettingsControl()
             case .library: libraryPage
             case .backup: backupPage
+            case .assistant: AISettingsView(controller: store.assistant, model: store.assistantSettings)
             case .mcp: MCPSettingsView()
             case .about: aboutPage
             }

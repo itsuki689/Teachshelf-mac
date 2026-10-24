@@ -6,7 +6,6 @@ struct AIChatWorkspace: View {
     @Environment(\.appTheme) private var theme
     @ObservedObject var controller: AIChatController
     @ViewState private var input = ""
-    @ViewState private var showingConfiguration = false
     private let examples = ["今天有哪些待完成的计划？", "每门课程各有多少份资料？", "帮我整理当前课程的资料分类"]
 
     var body: some View {
@@ -20,7 +19,7 @@ struct AIChatWorkspace: View {
                 }
                 Spacer(minLength: 8)
                 Button("新对话", systemImage: "square.and.pencil") { controller.reset() }.disabled(controller.isRunning)
-                Button("模型设置", systemImage: "slider.horizontal.3") { showingConfiguration = true }.disabled(controller.isRunning)
+                Button("模型设置", systemImage: "slider.horizontal.3") { store.openSettings(.assistant) }.disabled(controller.isRunning)
             }.padding(20)
             Divider()
             ScrollViewReader { proxy in
@@ -41,7 +40,6 @@ struct AIChatWorkspace: View {
             composer
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        .sheet(isPresented: $showingConfiguration) { AIConfigurationSheet(controller: controller) }
     }
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -60,7 +58,7 @@ struct AIChatWorkspace: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button("设置模型") { showingConfiguration = true }.buttonStyle(.borderedProminent)
+                        Button("设置模型") { store.openSettings(.assistant) }.buttonStyle(.borderedProminent)
                     }.padding(20)
                 }
             }

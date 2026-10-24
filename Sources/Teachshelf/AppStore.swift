@@ -29,6 +29,7 @@ private struct PlanUndo {
     @Published var repository: LibraryRepository
     let appearancePreference: AppearancePreference
     @Published var navigation: SidebarSelection? = .all
+    @Published var settingsSection = SettingsSection.appearance
     @Published var navigationHistory = WorkspaceNavigationHistory()
     @Published var selectedMaterialIDs: Set<UUID> = []
     @Published var search = ""
@@ -49,6 +50,7 @@ private struct PlanUndo {
     var mcpController: MCPController?
     lazy var toolExecutor = AppToolExecutor(store: self)
     lazy var assistant = AIChatController(store: self)
+    lazy var assistantSettings = AISettingsModel(controller: assistant)
     var editingMaterialCounts: [UUID: Int] = [:]
     var editingFolderCounts: [UUID: Int] = [:]
     var materialFolderSheetCount = 0

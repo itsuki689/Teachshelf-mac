@@ -34,6 +34,12 @@ struct WorkspaceNavigationHistory {
 }
 
 extension AppStore {
+    func openSettings(_ section: SettingsSection) {
+        navigate(to: .settings)
+        guard navigation == .settings else { return }
+        settingsSection = section
+    }
+
     var canGoBack: Bool { !navigationHistory.back.isEmpty }
     var canGoForward: Bool { !navigationHistory.forward.isEmpty }
     var workspaceLocation: WorkspaceLocation { WorkspaceLocation(page: navigation, folderID: materialFolderID) }
