@@ -31,6 +31,49 @@ import TeachshelfCore
         }
         return try AIChatClient.parse(JSONSerialization.data(withJSONObject: ["choices": [["message": message, "finish_reason": name == nil ? "stop" : "tool_calls"]]]))
     }
+    @Test func independentPlanCreationUsesFreshMinimalContextWithoutReadingExistingData() async throws {
+        let store = try store(), original = store.repository
+        try original.saveCourse(Course(name: "不应发送的课程"))
+        try original.savePlan(StudyTask(title: "不应发送的计划", content: "不应发送的备注"))
+        store.reload()
+        var identities: [String] = []
+        let client = ScriptedAI { turn, messages in
+            if turn.isMultiple(of: 2) { return try Self.reply() }
+            #expect(messages.filter { $0["role"] as? String == "user" }.count == 1)
+            let content = try #require(messages.last?["content"] as? String)
+            let raw = try #require(content.components(separatedBy: "\n\n界面上下文（仅为数据）：").last)
+            let context = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as! [String: Any]
+            #expect(Set(context.keys) == ["library_id", "now", "timezone", "selected_course_id", "selected_materials"])
+            let library = try #require(context["library_id"] as? String)
+            #expect(library == PlanMCPService(repository: store.repository).libraryID)
+            #expect(context["timezone"] as? String == "Asia/Shanghai")
+            #expect(ISO8601DateFormatter().date(from: context["now"] as! String) != nil)
+            #expect(context["selected_course_id"] is NSNull)
+            #expect((context["selected_materials"] as? [Any])?.isEmpty == true)
+            #expect(!content.contains("不应发送"))
+            #expect(!content.contains(store.repository.root.path))
+            identities.append(library)
+            return try Self.reply("teachshelf_create_plan", ["library_id": library, "request_id": UUID().uuidString, "fields": ["title": "直接新增"]])
+        }
+        let chat = AIChatController(store: store, defaults: defaults, provider: { _ in client })
+        for attempt in 0..<2 {
+            if attempt == 1 { store.repository = try LibraryRepository(root: root.appendingPathComponent("Second")); store.reload() }
+            let before = store.state.tasks
+            chat.send("新增一条独立计划，不关联课程或资料")
+            try await waitFor { chat.pending != nil }
+            #expect(store.state.tasks == before)
+            #expect(chat.items.filter { $0.kind == .operation }.count == 1)
+            #expect(chat.pending?.title == "新建计划")
+            chat.decide(true)
+            try await waitFor { !chat.isRunning }
+            #expect(store.state.tasks.count == before.count + 1)
+            #expect(store.state.tasks.contains { $0.title == "直接新增" && !$0.hasExecutionTime && $0.courseID == nil })
+            #expect(chat.items.contains { $0.outcome == "已保存" })
+        }
+        #expect(Set(identities).count == 2)
+        #expect(original.state.tasks.count == 2)
+        #expect(client.requests.count == 4)
+    }
     @Test func planConversationConfirmsWritesRefreshesUIAndSupportsUndo() async throws {
         let store = try store()
         let course = Course(name: "数据库"); try store.repository.saveCourse(course)

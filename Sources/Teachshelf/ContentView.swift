@@ -109,8 +109,10 @@ struct ContentView: View {
             }.padding(.horizontal, 14).padding(.bottom, 6)
                 .accessibilityElement(children: .contain).accessibilityLabel("快捷入口")
 
-            navRow("计划", "calendar", .schedule, compact: true).padding(.horizontal, 14)
-            navRow("AI 助手", "sparkles", .assistant, compact: true).padding(.horizontal, 14)
+            HStack(spacing: 6) {
+                navRow("计划", "calendar", .schedule, compact: true).frame(maxWidth: .infinity)
+                navRow("AI 助手", "sparkles", .assistant, compact: true).frame(maxWidth: .infinity)
+            }.padding(.horizontal, 14)
             Divider().padding(.horizontal, 20).padding(.vertical, 12)
             HStack(spacing: 8) {
                 SolidChoiceMenu("课程状态", selection: $store.courseArchiveFilter,

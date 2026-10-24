@@ -44,15 +44,15 @@ struct SidebarDestinationButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 9) {
+            HStack(spacing: compact ? 6 : 9) {
                 Image(systemName: symbol)
-                    .font(.system(size: 17, weight: selected ? .semibold : .regular))
-                    .frame(width: 18)
-                Text(title).lineLimit(1)
-                Spacer(minLength: 4)
+                    .font(.system(size: compact ? 14 : 17, weight: selected ? .semibold : .regular))
+                    .frame(width: compact ? 16 : 18)
+                Text(title).lineLimit(1).layoutPriority(1)
+                Spacer(minLength: compact ? 0 : 4)
                 if let count, count > 0 { Text("\(count)").font(.caption).foregroundStyle(.secondary) }
             }.font(.system(size: compact ? 12 : 13, weight: selected ? .semibold : .regular))
-                .padding(.horizontal, 10).frame(height: compact ? 30 : 36)
+                .padding(.horizontal, compact ? 8 : 10).frame(height: compact ? 30 : 36)
                 .foregroundStyle(.primary)
                 .background(selected ? theme.selection : (hovered ? theme.ink.opacity(0.06) : .clear), in: RoundedRectangle(cornerRadius: 7))
                 .contentShape(RoundedRectangle(cornerRadius: 7))

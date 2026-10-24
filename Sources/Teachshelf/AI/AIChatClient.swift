@@ -37,7 +37,11 @@ final class AINoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable 
 
     static func tools() -> [[String: Any]] {
         TeachshelfMCPTools.definitions.map { definition in
-            ["type": "function", "function": ["name": definition["name"]!, "description": definition["description"]!, "parameters": definition["inputSchema"]!]]
+            // External MCP clients need discovery; the in-app assistant already has identity and time.
+            let description = definition["name"] as? String == "teachshelf_context"
+                ? "按需获取资料库整体概况、课程列表、类别和版本。界面上下文已含 library_id、当前时间和时区；新增独立计划无需调用本工具。查找或修改具体对象时优先使用对应查询工具。"
+                : definition["description"]!
+            return ["type": "function", "function": ["name": definition["name"]!, "description": description, "parameters": definition["inputSchema"]!]]
         }
     }
     func complete(messages: [[String: Any]], tools: [[String: Any]], toolChoice: Any = "auto") async throws -> AIReply {
