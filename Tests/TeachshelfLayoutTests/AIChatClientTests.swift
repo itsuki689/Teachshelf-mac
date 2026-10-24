@@ -16,6 +16,7 @@ private final class AIHTTPFixture: URLProtocol {
         }
         Self.lock.lock(); let handler = Self.handler; Self.lock.unlock()
         let (status, data) = handler?(request, body) ?? (500, Data())
+        if status < 0 { client?.urlProtocol(self, didFailWithError: URLError(URLError.Code(rawValue: status))); return }
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
@@ -33,6 +34,7 @@ private final class AIHTTPFixture: URLProtocol {
         let client = client { request, data in
             #expect(request.url?.path == "/v1/chat/completions")
             #expect(request.httpMethod == "POST")
+            #expect(request.timeoutInterval == 300)
             #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture-key")
             let body = try! JSONSerialization.jsonObject(with: data) as! [String: Any]
             #expect(body["reasoning_effort"] as? String == "none")
@@ -52,6 +54,15 @@ private final class AIHTTPFixture: URLProtocol {
         }
         let client = client { _, _ in (200, Data(#"{"choices":[{"message":{"role":"assistant","content":"hello"}}]}"#.utf8)) }
         await #expect(throws: (any Error).self) { try await client.testConnection() }
+    }
+    @Test func qwenStringBooleanCapabilityProbeIsAccepted() async throws {
+        let client = client { _, _ in (200, Data(#"{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"test","type":"function","function":{"name":"connection_test","arguments":"{\"ok\":\"True\"}"}}]}}]}"#.utf8)) }
+        try await client.testConnection()
+    }
+    @Test func slowServerTimeoutHasAnActionableMessage() async throws {
+        let client = client { _, _ in (URLError.timedOut.rawValue, Data()) }
+        do { try await client.testConnection(); Issue.record("Timeout was accepted") }
+        catch { #expect(error.localizedDescription.contains("模型响应超时")); #expect(!error.localizedDescription.contains("无法连接")) }
     }
     @Test func redirectsNeverForwardCredentials() async {
         let session = URLSession(configuration: .ephemeral); defer { session.invalidateAndCancel() }

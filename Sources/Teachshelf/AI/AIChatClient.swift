@@ -27,8 +27,8 @@ final class AINoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable 
     private let session: URLSession
     init(configuration: AIConfiguration, key: String, sessionConfiguration: URLSessionConfiguration = .ephemeral) {
         self.configuration = configuration; self.key = key
-        sessionConfiguration.timeoutIntervalForRequest = 90
-        sessionConfiguration.timeoutIntervalForResource = 120
+        sessionConfiguration.timeoutIntervalForRequest = 300
+        sessionConfiguration.timeoutIntervalForResource = 360
         sessionConfiguration.httpCookieStorage = nil; sessionConfiguration.urlCache = nil
         sessionConfiguration.urlCredentialStorage = nil
         session = URLSession(configuration: sessionConfiguration, delegate: AINoRedirect(), delegateQueue: nil)
@@ -44,6 +44,7 @@ final class AINoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable 
         try Task.checkCancellation()
         guard configuration.isConfigured else { throw PlanMCPError("请先设置模型地址和名称。") }
         var request = URLRequest(url: try configuration.completionURL())
+        request.timeoutInterval = 300
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if !key.isEmpty { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
@@ -57,6 +58,12 @@ final class AINoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable 
         do { (bytes, response) = try await session.bytes(for: request) }
         catch {
             if Task.isCancelled { throw CancellationError() }
+            if (error as? URLError)?.code == .timedOut {
+                throw PlanMCPError("模型响应超时，请检查服务器负载或稍后重试。已完成的操作会保留在结果卡片中。")
+            }
+            if (error as? URLError)?.code == .appTransportSecurityRequiresSecureConnection {
+                throw PlanMCPError("macOS 拒绝此 HTTP 地址。请使用 HTTPS，或本机/私有网络的 IP 地址。")
+            }
             throw PlanMCPError("无法连接模型服务，请检查地址、网络及服务状态。")
         }
         guard let response = response as? HTTPURLResponse else { bytes.task.cancel(); throw PlanMCPError("模型服务未返回 HTTP 响应。") }
@@ -115,10 +122,11 @@ final class AINoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable 
     }
 
     func testConnection() async throws {
-        let definition: [String: Any] = ["type": "function", "function": ["name": "connection_test", "description": "Return ok true.", "parameters": ["type": "object", "properties": ["ok": ["type": "boolean"]], "required": ["ok"], "additionalProperties": false]]]
+        let schema: [String: Any] = ["type": "object", "properties": ["ok": ["type": "boolean"]], "required": ["ok"], "additionalProperties": false]
+        let definition: [String: Any] = ["type": "function", "function": ["name": "connection_test", "description": "Return ok true.", "parameters": schema]]
         let reply = try await complete(messages: [["role": "user", "content": "Call connection_test with ok=true."]], tools: [definition], toolChoice: ["type": "function", "function": ["name": "connection_test"]])
         guard reply.calls.count == 1, reply.calls[0].name == "connection_test",
-              let args = try? JSONSerialization.jsonObject(with: Data(reply.calls[0].arguments.utf8)) as? [String: Any], args["ok"] as? Bool == true else {
+              let args = try? AIToolArguments.decode(reply.calls[0].arguments, schema: schema), args["ok"] as? Bool == true else {
             throw PlanMCPError("服务可以连接，但模型未正确调用工具。请换用支持工具调用的模型或调整服务配置。")
         }
     }

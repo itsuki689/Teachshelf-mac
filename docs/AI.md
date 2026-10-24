@@ -11,7 +11,7 @@
 
 测试只向配置的服务发送一条测试消息，要求返回 `connection_test`，不访问资料库。能聊天的模型不一定支持工具调用；测试不通过时，应检查模型、工具模板及服务配置。部分服务需要将 `reasoning_effort` 设为 `none` 才能调用工具，此时启用相应开关；其他服务保持关闭。课屿不内置模型，也不下载模型权重。
 
-服务器部署的本地模型只需提供兼容 API。例如本机转发端口可填写 `http://127.0.0.1:8000/v1`。远程部署建议使用 HTTPS；HTTP 会明文传输对话和密钥。课屿不跟随 API 重定向，请直接填写最终地址。
+服务器部署的本地模型只需提供兼容 API。例如本机转发端口可填写 `http://127.0.0.1:8000/v1`。应用允许本机、RFC1918 私有 IPv4、100.64.0.0/10 私有组网地址和 IPv6 ULA 的 HTTP 连接；公网地址请使用 HTTPS。HTTP 会明文传输对话和密钥。课屿不跟随 API 重定向，请直接填写最终地址。
 
 模型只返回工具调用建议，Mac 上的课屿负责实际执行。**不需要向模型服务器开放课屿 MCP 端口，也不需要把课屿 MCP 令牌交给模型。** 关闭设置中的外部 MCP 服务不影响内置助手。
 
@@ -34,7 +34,11 @@
 
 API Key 单独保存在 macOS 钥匙串，按完整 API 地址隔离；不会进入资料库、备份、对话、工具参数或配置 JSON。更换地址会清空密钥输入，需要重新填写。配置中的地址、模型名称和推理选项保存在本机应用偏好中。
 
-当前不读取 PDF、Word 等文件正文，不支持正文总结、任意磁盘读写、Shell 命令或文件导入。工具没有节次时间表，按“第八节”等描述安排时间时助手需要先确认具体时刻。接口协议采用非流式 Chat Completions，等待完整回答后显示；支持多轮对话及停止等待。每轮最多 12 次模型请求、32 次工具调用、单响应最多 8 个工具调用，写入不自动重试。
+当前不读取 PDF、Word 等文件正文，不支持正文总结、任意磁盘读写、Shell 命令或文件导入。工具没有节次时间表，按“第八节”等描述安排时间时助手需要先确认具体时刻。接口协议采用非流式 Chat Completions，等待完整回答后显示；支持多轮对话及停止等待。为适配本地模型较慢的首轮预填充，请求允许连续等待最多 5 分钟（单请求总时限 6 分钟），期间可以随时停止。每轮最多 12 次模型请求、32 次工具调用、单响应最多 8 个工具调用，写入不自动重试。
+
+部分兼容服务会把工具参数中的布尔值、整数或嵌套 JSON 编码成字符串。课屿仅按工具 schema 转换明确的 `True`/`False`、整数和 JSON 容器；文本字段保持原样，缺失字段、未知字段、越界值及错误类型仍然拒绝执行。上下文窗口和 MTP 由模型服务控制，无需在课屿另行填写。
+
+本地 HTTP 支持依据 Apple 的 [NSAllowsLocalNetworking](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowslocalnetworking) 和 [NSExceptionDomains](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsexceptiondomains) 配置，不关闭全局 ATS。
 
 ## 实现与验证
 

@@ -114,9 +114,8 @@ struct AIPendingOperation: Identifiable {
                     items.append(item)
                     do {
                         guard let definition = TeachshelfMCPTools.definitions.first(where: { $0["name"] as? String == call.name }),
-                              let schema = definition["inputSchema"] as? [String: Any],
-                              let arguments = try JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as? [String: Any] else { throw PlanMCPError("未知工具或参数格式无效。") }
-                        try PlanMCPTools.validate(arguments, schema: schema)
+                              let schema = definition["inputSchema"] as? [String: Any] else { throw PlanMCPError("未知工具或参数格式无效。") }
+                        let arguments = try AIToolArguments.decode(call.arguments, schema: schema)
                         if TeachshelfMCPTools.writeNames.contains(call.name) {
                             var detail = AIToolPresentation.preview(name: call.name, arguments: arguments, state: store.state)
                             if call.name == "teachshelf_undo_change" {
