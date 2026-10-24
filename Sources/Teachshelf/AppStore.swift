@@ -318,9 +318,9 @@ private struct PlanUndo {
         if let id = currentCourseID {
             return MaterialOrdering.sorted(items, by: state.courses.first { $0.id == id }?.materialSort ?? .name)
         }
+        if sort == "名称" { return MaterialOrdering.sorted(items, by: .name) }
         items.sort {
             switch sort {
-            case "名称": return $0.title.localizedStandardCompare($1.title) == .orderedAscending
             case "文件大小": return $0.size > $1.size
             case "最近打开": return ($0.lastOpenedAt ?? .distantPast) > ($1.lastOpenedAt ?? .distantPast)
             default: return navigation == .recent ? ($0.lastOpenedAt ?? .distantPast) > ($1.lastOpenedAt ?? .distantPast) : $0.addedAt > $1.addedAt

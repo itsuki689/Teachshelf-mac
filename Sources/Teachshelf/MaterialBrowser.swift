@@ -45,7 +45,7 @@ struct MaterialBrowserSection: Identifiable {
         }
         func rows(in parent: UUID?, depth: Int) -> [MaterialBrowserRow] {
             var result: [MaterialBrowserRow] = []
-            for folder in (foldersByParent[parent] ?? []).sorted(by: { $0.name.localizedStandardCompare($1.name) == .orderedAscending }) {
+            for folder in MaterialOrdering.sortedFolders(foldersByParent[parent] ?? []) {
                 let ids = descendants[folder.id] ?? []
                 guard !filtered || !ids.isEmpty || folder.name.localizedCaseInsensitiveContains(search) && categoryFilter == "全部类别" && formatFilter == "全部格式" else { continue }
                 let expanded = expandedMaterialFolderIDs.contains(folder.id) || filtered && !ids.isEmpty

@@ -18,8 +18,7 @@ extension AppStore {
     var canReorderMaterials: Bool { currentCourseID != nil && materialSortMode == .custom }
     var selectedVisibleMaterialIDs: Set<UUID> { selectedMaterialIDs.intersection(materialBrowserSelectableIDs) }
     var currentMaterialFolders: [MaterialFolder] {
-        state.materialFolders.filter { $0.courseID == currentCourseID && $0.parentID == materialFolderID }
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        MaterialOrdering.sortedFolders(state.materialFolders.filter { $0.courseID == currentCourseID && $0.parentID == materialFolderID })
     }
 
     func openMaterialFolder(_ id: UUID?) {
@@ -116,7 +115,7 @@ struct MaterialFolderSheet: View {
     private var options: [ChoiceOption<UUID?>] {
         [ChoiceOption(value: nil, title: "课程根目录")] + store.state.materialFolders.filter { $0.courseID == store.currentCourseID }.map {
             ChoiceOption(value: Optional($0.id), title: MaterialOrdering.folderPath($0.id, in: store.state.materialFolders).map(\.name).joined(separator: " / "))
-        }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        }.sorted { MaterialOrdering.compareNames($0.title, $1.title) == .orderedAscending }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {

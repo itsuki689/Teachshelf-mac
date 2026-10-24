@@ -24,17 +24,18 @@ public struct MaterialFolder: Identifiable, Codable, Hashable, Sendable {
 
 public enum MaterialOrdering {
     public static func sorted(_ records: [MaterialRecord], by mode: MaterialSortMode) -> [MaterialRecord] {
-        records.sorted { a, b in
+        records.map { (record: $0, name: mode == .name ? chapterSortKey($0.title) : "") }.sorted { lhs, rhs in
+            let a = lhs.record, b = rhs.record
             if mode == .custom, a.customOrder != b.customOrder {
                 return (a.customOrder ?? Int.max) < (b.customOrder ?? Int.max)
             }
             if mode == .name {
-                let comparison = a.title.localizedStandardCompare(b.title)
+                let comparison = lhs.name.localizedStandardCompare(rhs.name)
                 if comparison != .orderedSame { return comparison == .orderedAscending }
             }
             if a.addedAt != b.addedAt { return a.addedAt > b.addedAt }
             return a.id.uuidString < b.id.uuidString
-        }
+        }.map(\.record)
     }
 
     public static func folderPath(_ id: UUID?, in folders: [MaterialFolder]) -> [MaterialFolder] {

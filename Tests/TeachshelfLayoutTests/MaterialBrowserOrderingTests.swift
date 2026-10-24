@@ -5,6 +5,43 @@ import TeachshelfCore
 
 @Suite(.serialized)
 @MainActor struct MaterialBrowserOrderingTests {
+    @Test func chineseChaptersRemainOrderedWhenExpandingEnteringAndSwitchingToCustom() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Teachshelf-chinese-order-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repo = try LibraryRepository(root: root.appendingPathComponent("library"))
+        let course = Course(name: "数据库系统概论"); try repo.saveCourse(course)
+        let website = try repo.createMaterialFolder(name: "教学网站", courseID: course.id)
+        let handouts = try repo.createMaterialFolder(name: "课件", courseID: course.id, parentID: website.id)
+        let chapters = ["第一章", "第二章", "第三章", "第四章", "第五章", "第六章", "第七章", "第十章", "第十一章"]
+        let folders = try chapters.reversed().map { try repo.createMaterialFolder(name: $0, courseID: course.id, parentID: handouts.id) }
+        let second = try #require(folders.first { $0.name == "第二章" })
+        let titles = ["第二节", "第三节", "第10节", "第十一节"]
+        let urls = try titles.reversed().map { title -> URL in
+            let url = root.appendingPathComponent(title + ".txt")
+            try Data(title.utf8).write(to: url)
+            return url
+        }
+        _ = try repo.importFiles(urls: urls, courseID: course.id, category: "课件", copy: false, folderID: second.id)
+        let store = AppStore(repository: repo, remembersLocation: false)
+        store.navigate(to: .course(course.id))
+        let before = repo.state
+        store.expandedMaterialFolderIDs = [website.id, handouts.id, second.id]
+        #expect(store.materialBrowserRows.compactMap(\.folder).map(\.name) == ["教学网站", "课件"] + chapters)
+        #expect(store.materialBrowserRows.compactMap(\.material).map(\.title) == titles)
+        store.openMaterialFolder(handouts.id)
+        #expect(store.materialBrowserRows.map(\.title) == chapters)
+        #expect(store.currentMaterialFolders.map(\.name) == chapters)
+        store.openMaterialFolder(second.id)
+        #expect(store.materialBrowserRows.map(\.title) == titles)
+        #expect(store.visibleMaterials.map(\.title) == titles)
+        store.navigate(to: .all); store.sort = "名称"
+        #expect(store.visibleMaterials.map(\.title) == titles)
+        #expect(repo.state == before)
+        try repo.setMaterialSort(.custom, courseID: course.id); store.reload()
+        store.navigate(to: .course(course.id)); store.openMaterialFolder(second.id)
+        #expect(store.materialBrowserRows.map(\.title) == titles)
+    }
+
     @Test func defaultNamesApplyToExpandedAndEnteredFoldersAndDoNotJumpWhenChoosingCustom() throws {
         try fixture { store, course, outer, inner, earlierOuter, earlierInner, records in
             #expect(store.state.courses.first { $0.id == course.id }?.materialSort == nil)
