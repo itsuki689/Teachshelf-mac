@@ -6,7 +6,7 @@
 
 ## 模块与执行链路
 
-[Package.swift](../Package.swift) 定义 4 个实现 target、3 个测试 target，以及 Core 库、原生应用、MCP stdio 桥接共 3 个 product。构建使用 Swift 6 工具链，当前源码语言模式为 Swift 5，无第三方 Swift 包依赖。
+[Package.swift](../Package.swift) 定义 4 个实现 target、3 个测试 target，以及 Core 库、原生应用、MCP stdio 桥接共 3 个 product。构建使用 Swift 6 工具链，当前源码语言模式为 Swift 5，无第三方 Swift 包依赖。应用构建还需新版 macOS SDK，CI 基线为 Xcode 26.3；运行目标仍为 macOS 14+，详见 [环境与构建](development.md#环境与构建)。
 
 ```mermaid
 flowchart TD

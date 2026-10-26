@@ -20,7 +20,7 @@
 
 ## 本机启动
 
-需要 **macOS 14+** 和提供 **Swift 6+** 的 Xcode 或 Command Line Tools。Node.js 为课表解析器测试的可选依赖。
+应用运行目标为 **macOS 14+**。构建基线为 **Xcode 26.3**，也可使用包含对应或更新 macOS SDK 的 Command Line Tools；构建主机需满足开发工具的系统要求。仅有 Swift 6 编译器还不够，顶栏代码依赖新版 SDK。Node.js 为课表解析器测试的可选依赖。
 
 在仓库根目录执行：
 
@@ -42,7 +42,7 @@
 
 测试脚本运行 Swift 回归；检测到 Node.js 时还会运行本科课表解析测试。原生窗口、WebKit 和文件事件相关测试需要 macOS 系统服务。故障注入仅使用独立临时资料库。
 
-[macOS CI](.github/workflows/macos-ci.yml) 在推送到 `main`、面向 `main` 的 PR 和手动触发时运行：单个 macOS 15 / Xcode 16.4 任务执行完整 Swift 与 JS 测试、Release 构建、ad hoc 验签和许可证打包检查。同一分支或 PR 的新任务会取消旧任务。使用方式与覆盖边界见 [开发指南](docs/development.md#github-actions)。
+[macOS CI](.github/workflows/macos-ci.yml) 在推送到 `main`、面向 `main` 的 PR 和手动触发时运行：单个 macOS 15 / Xcode 26.3 任务执行完整 Swift 与 JS 测试、Release 构建、ad hoc 验签和许可证打包检查。同一分支或 PR 的新任务会取消旧任务。使用方式与覆盖边界见 [开发指南](docs/development.md#github-actions)。
 
 恢复一致性功能回归记录为 **2026-10-26，提交 `fff296d`：417 项 Swift 测试、52 个套件、15 项 JS 解析测试通过**。其中恢复相关专项为 103 项 Swift 测试；49 个故障场景实际终止 63 个独立子进程。该记录不表示每次文档更新都重跑完整测试，也不代替真实学校登录、附件下载或整机断电验证。详见 [验收记录](docs/validation-history.md)。
 

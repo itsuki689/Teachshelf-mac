@@ -4,8 +4,8 @@
 
 ## 环境与构建
 
-- macOS 14 或更高版本。
-- 提供 Swift 6+ 的 Xcode 或 Command Line Tools；包的源码语言模式目前为 Swift 5。
+- 应用运行目标为 macOS 14 或更高版本；构建主机需满足所选 Xcode / Command Line Tools 的系统要求。
+- 构建基线为 Xcode 26.3，也可使用包含对应或更新 macOS SDK 的 Command Line Tools。Swift 6 工具链、源码语言模式 Swift 5；顶栏使用新版 SDK 的 `toolbarPrincipal`、`sharedBackgroundVisibility`，因此 Xcode 16.4 虽有 Swift 6，仍无法编译当前应用。
 - Node.js 用于本科课表解析器测试；缺少时脚本明确提示跳过，不应把这部分记为通过。
 - Swift 测试包含 AppKit、WebKit、本机 HTTP 和文件事件，执行环境必须允许对应系统服务。
 
@@ -64,7 +64,7 @@ node scripts/test-nju-parser.js
 
 ### GitHub Actions
 
-[macOS CI](../.github/workflows/macos-ci.yml) 使用单个 `macos-15` 运行器，固定选择 Xcode 16.4，最长运行 20 分钟。触发范围为推送到 `main`、以 `main` 为目标的 PR，以及 Actions 页的 **Run workflow**。同一分支或 PR 的新运行取消旧运行；不建立多版本矩阵、不上传构建产物、不维护 `.build` 缓存。
+[macOS CI](../.github/workflows/macos-ci.yml) 使用单个 `macos-15` 运行器，固定选择 Xcode 26.3，最长运行 20 分钟。触发范围为推送到 `main`、以 `main` 为目标的 PR，以及 Actions 页的 **Run workflow**。同一分支或 PR 的新运行取消旧运行；不建立多版本矩阵、不上传构建产物、不维护 `.build` 缓存。
 
 工作流复用现有两个脚本：先运行完整 Swift 和 JS 测试，再构建 Release 应用与 MCP 桥接、检查签名，最后逐字节核对打包的 MIT、Apache-2.0 和 NOTICE 文件。Node.js 使用运行器预装版本，并在测试前检查存在，避免 JS 测试被静默略过。实际 Xcode、Swift、Node 版本会显示在日志中；更新工具链时参考 [GitHub 运行器镜像清单](https://github.com/actions/runner-images/tree/main/images/macos)。
 
