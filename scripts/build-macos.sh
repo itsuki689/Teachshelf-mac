@@ -8,7 +8,8 @@ export SWIFTPM_MODULECACHE_OVERRIDE="$CLANG_MODULE_CACHE_PATH"
 
 cd "$PROJECT_DIR"
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
-BUILD_ARGS=()
+# Bash 3.2 treats an empty array as unset under `set -u` (the Xcode path).
+BUILD_ARGS=(--configuration release)
 if [[ "${DEVELOPER_DIR:-$(/usr/bin/xcode-select --print-path)}" == */CommandLineTools ]]; then
     # CLT's SwiftBuild backend attempts a restricted dSYM generation step.
     BUILD_ARGS+=(--build-system native -Xswiftc -gnone)
@@ -17,13 +18,13 @@ swift build --disable-sandbox \
     --cache-path "$PROJECT_DIR/.build/cache" \
     --config-path "$PROJECT_DIR/.build/config" \
     --security-path "$PROJECT_DIR/.build/security" \
-    --configuration release --product Teachshelf "${BUILD_ARGS[@]}"
+    --product Teachshelf "${BUILD_ARGS[@]}"
 
 swift build --disable-sandbox \
     --cache-path "$PROJECT_DIR/.build/cache" \
     --config-path "$PROJECT_DIR/.build/config" \
     --security-path "$PROJECT_DIR/.build/security" \
-    --configuration release --product TeachshelfMCP "${BUILD_ARGS[@]}"
+    --product TeachshelfMCP "${BUILD_ARGS[@]}"
 
 mkdir -p "$PROJECT_DIR/build"
 BUNDLE_STAGE="$(mktemp -d "$PROJECT_DIR/build/.app-bundle.XXXXXX")"
