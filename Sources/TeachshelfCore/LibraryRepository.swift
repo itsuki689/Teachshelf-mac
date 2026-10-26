@@ -15,6 +15,9 @@ public final class LibraryRepository: @unchecked Sendable {
     private var lockDescriptor: Int32 = -1
     var deletedTaskBatches: [[StudyTask]] = []
     var fileObservations: [String: FileObservation] = [:]
+    // Internal injection point for isolated failure/process-termination tests.
+    // Production callers never install a hook; there is no environment switch.
+    var restoreCheckpoint: ((String) throws -> Void)?
 
     var indexURL: URL { root.appendingPathComponent("library.json") }
     var filesURL: URL { root.appendingPathComponent("files", isDirectory: true) }
@@ -51,8 +54,13 @@ public final class LibraryRepository: @unchecked Sendable {
 
     // MARK: - Library ownership
 
-    public init(root: URL) throws {
+    public convenience init(root: URL) throws {
+        try self.init(root: root, restoreCheckpoint: nil)
+    }
+
+    init(root: URL, restoreCheckpoint: ((String) throws -> Void)?) throws {
         self.root = root.standardizedFileURL
+        self.restoreCheckpoint = restoreCheckpoint
         try fileManager.createDirectory(at: self.root, withIntermediateDirectories: true)
         try rejectSymbolicLink(self.root)
         let lockURL = self.root.appendingPathComponent(".teachshelf.lock")
@@ -65,6 +73,9 @@ public final class LibraryRepository: @unchecked Sendable {
             throw LibraryError.locked
         }
         do {
+            // Restore owns whole directory generations. Settle it before reading
+            // the index, creating files/, replaying other logs, or Finder scans.
+            try recoverBackupRestore()
             try rejectSymbolicLink(filesURL)
             if fileManager.fileExists(atPath: indexURL.path) {
                 try rejectSymbolicLink(indexURL)
@@ -193,20 +204,37 @@ public final class LibraryRepository: @unchecked Sendable {
     private func persist(_ state: LibraryState) throws {
         try rejectSymbolicLink(indexURL)
         let temporary = root.appendingPathComponent(".index-\(UUID().uuidString).tmp")
-        let backupTemporary = root.appendingPathComponent(".backup-\(UUID().uuidString).tmp")
         defer {
             try? fileManager.removeItem(at: temporary)
-            try? fileManager.removeItem(at: backupTemporary)
         }
         let data = try Self.encoder.encode(state)
         try data.write(to: temporary, options: .withoutOverwriting)
         let handle = try FileHandle(forWritingTo: temporary)
         try handle.synchronize()
         try handle.close()
+        try installPreparedIndex(temporary)
+    }
+
+    /// The same atomic index boundary is used by ordinary saves and restore.
+    /// The prepared inode survives rename and identifies the restore commit even
+    /// when the old and new JSON bytes happen to be identical.
+    func installPreparedIndex(_ temporary: URL) throws {
+        try ensureSafePath(temporary, beneath: root)
+        try rejectSymbolicLink(indexURL)
+        let backupTemporary = root.appendingPathComponent(".backup-\(UUID().uuidString).tmp")
+        defer { try? fileManager.removeItem(at: backupTemporary) }
         if fileManager.fileExists(atPath: indexURL.path) {
             try fileManager.copyItem(at: indexURL, to: backupTemporary)
             try atomicRename(backupTemporary, root.appendingPathComponent("library.json.bak"))
         }
         try atomicRename(temporary, indexURL)
+    }
+
+    func reloadAfterBackupRestore() throws {
+        snapshot = try Self.decode(Data(contentsOf: indexURL))
+        try validate(snapshot)
+        deletedTaskBatches.removeAll()
+        fileObservations = [:]
+        loadFileObservations()
     }
 }

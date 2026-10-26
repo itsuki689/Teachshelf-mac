@@ -46,7 +46,7 @@
 
 脚本将构建缓存写入 `.build/`，并处理 Command Line Tools 的测试框架路径。Swift 测试包含真实 AppKit 窗口和本地 WebKit HTML 夹具，需要 macOS 系统服务；限制 WebKit 子进程的沙箱可能导致测试无法完成。未安装 Node.js 时，脚本会明确提示跳过 JS 测试。
 
-**最近完整回归：2026-10-24，395 项 Swift 测试、49 个测试套件和 15 项本科课表 JS 解析测试通过。** 覆盖 AI 对话与确认、取消及迟到响应隔离、模型 HTTP 请求与工具能力检测、共享工具执行、MCP 协议与鉴权、真实 HTTP/stdio 调用、令牌更换与服务重启、计划并发冲突和撤销、课程资料及文件夹 MCP 编辑、批量移动回滚、Finder 改名与跨课程移动、丢失标记和重新定位、真实文件事件监听、物理文件夹与旧分组迁移、原子保存与中断恢复、备份恢复、计划与课表、网站更新流程、登录恢复、原生布局和工具栏交互。自动回归不代表重新完成学校登录或真实附件下载验收。
+**本轮完整回归：2026-10-26，417 项 Swift 测试、52 个测试套件和 15 项本科课表 JS 解析测试通过。** 本轮新增的备份恢复测试在 49 个故障场景中实际终止 63 个独立测试进程，覆盖提交前后及恢复自身再次中断；相关文件事务、迁移和同步专项共 103 项 Swift 测试通过。 覆盖 AI 对话与确认、取消及迟到响应隔离、模型 HTTP 请求与工具能力检测、共享工具执行、MCP 协议与鉴权、真实 HTTP/stdio 调用、令牌更换与服务重启、计划并发冲突和撤销、课程资料及文件夹 MCP 编辑、批量移动回滚、Finder 改名与跨课程移动、丢失标记和重新定位、真实文件事件监听、物理文件夹与旧分组迁移、原子保存与中断恢复、备份恢复、计划与课表、网站更新流程、登录恢复、原生布局和工具栏交互。自动回归不代表重新完成学校登录或真实附件下载验收。
 
 单独运行解析器测试或筛选 Swift 测试：
 
@@ -92,7 +92,8 @@ open -n "$PWD/build/Teachshelf.app" --args --data-dir "$PWD/build/QA/manual-libr
 | `LibraryRepository+Timetable.swift` | 本科课表导入、固定时段、调课与停课 |
 | `LibraryRepository+TeachingWebsite.swift` | 课程连接、来源映射、文件与作业合并、截止冲突 |
 | `LibraryRepository+Homework.swift` | 作业目录、外部挂载与目录操作 |
-| `LibraryRepository+Backups.swift` | 备份、恢复、资料库复制与失败回滚 |
+| `LibraryRepository+Backups.swift` | 备份、恢复入口及资料库复制 |
+| `LibraryRepository+BackupRestore.swift` | 持久化恢复事务、提交点校验及启动重放 |
 | `LibraryRepository+Preferences.swift` | 外观、过渡、强调色、边框与工具栏偏好 |
 | `LibraryRepository+PhysicalStorage.swift` | 物理目录、写前日志、文件移动及可续接的失败回滚 |
 | `LibraryRepository+FileSystemSync.swift` | 文件标识跟踪、Finder 移动和改名对账、丢失状态 |
@@ -103,7 +104,7 @@ open -n "$PWD/build/Teachshelf.app" --args --data-dir "$PWD/build/QA/manual-libr
 
 ## 数据与兼容性
 
-默认资料库位于 `~/Library/Application Support/Teachshelf`，保存 `library.json`、上一份索引 `library.json.bak`、库内文件副本及作业目录。课程资料按 `files/<课程名> [<课程UUID>]/资料/<文件夹层级>/` 组织，作业独立存于同一课程下的 `作业/`。空文件夹也会创建真实目录；文件夹改名整体移动目录，资料移动同步更新磁盘与索引，浏览和搜索继续使用索引。恢复前的内容保留到 `History/`。
+默认资料库位于 `~/Library/Application Support/Teachshelf`，保存 `library.json`、上一份索引 `library.json.bak`、库内文件副本及作业目录。课程资料按 `files/<课程名> [<课程UUID>]/资料/<文件夹层级>/` 组织，作业独立存于同一课程下的 `作业/`。空文件夹也会创建真实目录；文件夹改名整体移动目录，资料移动同步更新磁盘与索引，浏览和搜索继续使用索引。恢复前的内容保留到 `History/`。恢复备份时若进程中断，下次启动会先重放持久化恢复日志：索引原子提交前还原旧版本，提交后完成新版本及清理；日志或文件异常时保留现场并提示处理。详见 [备份恢复事务](docs/backup-restore.md)。
 
 旧资料库首次打开时自动迁移到格式 9，保留文件内容、资料编号及分组层级；旧版应用会拒绝打开，避免把目录压平。文件操作使用写前日志及同卷重命名，索引提交失败或进程中断时可恢复。外部引用仍保留原位置。
 
@@ -129,5 +130,6 @@ Finder 中移动、重命名 `files/` 内已入库的资料、课程目录或文
 - [使用指南](docs/usage.md)：完整功能、快捷键、目录与备份规则。
 - [教学网站实施与验收记录](docs/web-in-progress.md)：按版本记录的实现进度、验收范围与已知限制。
 - [教学网站初始设计](docs/web-in-plan.md)：早期方案与需求背景，当前行为以实现和使用指南为准。
+- [备份恢复事务](docs/backup-restore.md)：恢复策略、失败处理、进程终止验证及后续待办。
 - [历史验收记录](docs/validation-history.md)：从旧 README 归档的测试与界面验证记录。
 - [本科课表解析器说明](Resources/Timetable/README.md)：解析器来源、修改说明及授权。

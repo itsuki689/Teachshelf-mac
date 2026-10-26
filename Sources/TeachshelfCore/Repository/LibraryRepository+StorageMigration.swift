@@ -31,6 +31,7 @@ extension LibraryRepository {
     }
 
     func recoverMaterialRelocation(rollingBack: Bool = false) throws {
+        try requireNoPendingBackupRestore()
         try ensureSafePath(relocationURL, beneath: root)
         guard fileManager.fileExists(atPath: relocationURL.path) else { return }
         let relocations = try JSONDecoder().decode([MaterialRelocation].self, from: Data(contentsOf: relocationURL))

@@ -130,6 +130,7 @@ extension LibraryRepository {
     }
 
     func recoverPhysicalStorage(rollingBack: Bool = false) throws {
+        try requireNoPendingBackupRestore()
         let journal = physicalStorageJournalURL
         try ensureSafePath(journal, beneath: root)
         guard fileManager.fileExists(atPath: journal.path) else { return }
