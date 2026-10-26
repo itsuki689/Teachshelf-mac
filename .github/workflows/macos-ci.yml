@@ -1,0 +1,50 @@
+name: macOS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    name: Test and build
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Check toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          # Fail here if Node is absent; the test script otherwise skips JS tests.
+          node --version
+
+      - name: Run Swift and JavaScript tests
+        run: ./scripts/test-macos.sh
+
+      - name: Build and verify Release application
+        run: ./scripts/build-macos.sh
+
+      - name: Check bundled licenses
+        run: |
+          cmp LICENSE build/Teachshelf.app/Contents/Resources/LICENSE
+          cmp Resources/Timetable/LICENSE-APACHE-2.0.txt build/Teachshelf.app/Contents/Resources/Timetable/LICENSE-APACHE-2.0.txt
+          cmp Resources/Timetable/NOTICE.txt build/Teachshelf.app/Contents/Resources/Timetable/NOTICE.txt

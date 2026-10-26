@@ -60,7 +60,17 @@ node scripts/test-nju-parser.js
 
 `BackupRestoreRecoveryTests` 用独立 runner 子进程和父进程 `SIGKILL` 验证真实终止，包括恢复自身再中断；还覆盖普通异常、损坏日志、越界路径和符号链接。启动时依赖 runner 的 bundle 参数，不要改成仅抛出异常来代替进程测试。详见 [故障验证边界](backup-restore.md#验证方法与边界)。
 
-最近完整功能回归记录为 2026-10-26 的 `fff296d`：417 项 Swift 测试／52 个套件、15 项 JS 测试通过，恢复相关专项 103 项通过。文档修订应报告本次实际检查；引用历史结果时须保留日期和对应实现，不将历史通过记录当成本次运行结果。
+恢复一致性功能回归记录为 2026-10-26 的 `fff296d`：417 项 Swift 测试／52 个套件、15 项 JS 测试通过，恢复相关专项 103 项通过。文档修订应报告本次实际检查；引用历史结果时须保留日期和对应实现，不将历史通过记录当成本次运行结果。
+
+### GitHub Actions
+
+[macOS CI](../.github/workflows/macos-ci.yml) 使用单个 `macos-15` 运行器，固定选择 Xcode 16.4，最长运行 20 分钟。触发范围为推送到 `main`、以 `main` 为目标的 PR，以及 Actions 页的 **Run workflow**。同一分支或 PR 的新运行取消旧运行；不建立多版本矩阵、不上传构建产物、不维护 `.build` 缓存。
+
+工作流复用现有两个脚本：先运行完整 Swift 和 JS 测试，再构建 Release 应用与 MCP 桥接、检查签名，最后逐字节核对打包的 MIT、Apache-2.0 和 NOTICE 文件。Node.js 使用运行器预装版本，并在测试前检查存在，避免 JS 测试被静默略过。实际 Xcode、Swift、Node 版本会显示在日志中；更新工具链时参考 [GitHub 运行器镜像清单](https://github.com/actions/runner-images/tree/main/images/macos)。
+
+任务仅申请 `contents: read`，checkout 固定到提交 SHA 且不保留凭据，不需要仓库密钥。CI 使用临时资料库及离线夹具，不连接学校账号、真实模型或用户资料库，也不安装到 `/Applications` 或执行正式分发。本机提交后的安装核对继续遵循下方协作约定。
+
+首次推送后，在仓库 Actions 中核对对应提交的运行结果；本机验证通过不等于 GitHub 托管环境已经通过。失败时先检查环境输出及首个失败步骤，再在同样工具链下执行日志中的脚本。备份恢复子进程或 WebKit 测试失败也算 CI 失败，不应通过跳过测试变绿。仓库分支保护规则需要单独配置，本工作流不会自动将检查设为合并门槛。
 
 ## 修改与验证的对应关系
 

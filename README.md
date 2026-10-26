@@ -42,7 +42,9 @@
 
 测试脚本运行 Swift 回归；检测到 Node.js 时还会运行本科课表解析测试。原生窗口、WebKit 和文件事件相关测试需要 macOS 系统服务。故障注入仅使用独立临时资料库。
 
-最近完整功能回归记录为 **2026-10-26，恢复一致性提交 `fff296d`：417 项 Swift 测试、52 个套件、15 项 JS 解析测试通过**。其中恢复相关专项为 103 项 Swift 测试；49 个故障场景实际终止 63 个独立子进程。该记录不表示每次文档更新都重跑完整测试，也不代替真实学校登录、附件下载或整机断电验证。详见 [验收记录](docs/validation-history.md)。
+[macOS CI](.github/workflows/macos-ci.yml) 在推送到 `main`、面向 `main` 的 PR 和手动触发时运行：单个 macOS 15 / Xcode 16.4 任务执行完整 Swift 与 JS 测试、Release 构建、ad hoc 验签和许可证打包检查。同一分支或 PR 的新任务会取消旧任务。使用方式与覆盖边界见 [开发指南](docs/development.md#github-actions)。
+
+恢复一致性功能回归记录为 **2026-10-26，提交 `fff296d`：417 项 Swift 测试、52 个套件、15 项 JS 解析测试通过**。其中恢复相关专项为 103 项 Swift 测试；49 个故障场景实际终止 63 个独立子进程。该记录不表示每次文档更新都重跑完整测试，也不代替真实学校登录、附件下载或整机断电验证。详见 [验收记录](docs/validation-history.md)。
 
 模块关系、源码导航和持久化约束见 [架构说明](docs/architecture.md)；运行环境、测试范围和交付流程见 [开发指南](docs/development.md)。
 
@@ -81,3 +83,9 @@
 | [教学网站历史记录](docs/web-in-progress.md) | 网站功能实施过程与当时的验收结果 |
 | [教学网站初始方案](docs/web-in-plan.md) | 历史需求和设计，不作为当前行为说明 |
 | [课表解析器说明](Resources/Timetable/README.md) | 解析器来源、修改及授权 |
+
+## 开源许可
+
+除另有说明的第三方代码和资源外，本项目采用 [MIT License](LICENSE)，版权署名为 `2026 itsuki689 and contributors`。许可证随应用打包至 `Contents/Resources/LICENSE`。
+
+本科课表解析器及相关导入适配的来源说明见 [NOTICE](Resources/Timetable/NOTICE.txt)，相关第三方内容保留原有 [Apache-2.0 许可证](Resources/Timetable/LICENSE-APACHE-2.0.txt) 和署名；根目录 MIT 许可证不替代这些声明。
