@@ -1,10 +1,23 @@
 # 用 LLM 操作课屿计划与课程资料
 
+[项目首页](../README.md) · [AI 助手](AI.md) · [架构说明](architecture.md)
+
+本文对应课屿 1.16.1（77）。
+
 也可以直接使用课屿侧栏的 **AI 助手**：在 **设置 → AI 助手** 配置 OpenAI 兼容模型 API 后，在应用内自然语言操作。它复用同一工具目录和执行层，不要求开启外部 MCP 服务，也无需向服务器开放本机端口。见 [AI 助手指南](AI.md)。
 
-课屿 1.12 起内置 MCP 服务，1.13 增加课程、资料信息与物理文件夹管理，共提供 25 个工具。支持桌面客户端和部署在服务器上的 MCP 客户端/Agent。模型需要由具备 MCP 工具调用能力的客户端或 Agent 驱动；只有模型推理 API 本身不能直接调用 MCP。
+MCP 服务提供计划、课程、资料信息与物理文件夹管理，共 25 个工具。支持桌面客户端和部署在服务器上的 MCP 客户端/Agent。模型需要由具备 MCP 工具调用能力的客户端或 Agent 驱动；只有模型推理 API 本身不能直接调用 MCP。
 
-自 1.16.0 起，MCP 页按工具服务、客户端连接和当前会话分组；端口、令牌及远程客户端说明默认折叠。内置聊天的模型地址与 API Key 统一放在 **AI 助手** 设置页，MCP 继续使用标准 stdio / Streamable HTTP 工具协议。
+MCP 页按工具服务、客户端连接和当前会话分组；端口、令牌及远程客户端说明默认折叠。内置聊天的模型地址与 API Key 统一放在 **AI 助手** 设置页，MCP 继续使用标准 stdio / Streamable HTTP 工具协议。
+
+## 两种接入路径
+
+| 使用方式 | 模型连接 | 课屿工具执行 | 凭据 |
+| --- | --- | --- | --- |
+| 应用内 AI 助手 | 课屿请求 OpenAI 兼容 Chat Completions API | 应用内直接调用共享执行层 | 模型 API Key，可按服务要求留空 |
+| 外部 MCP 客户端／Agent | 由外部客户端连接其模型服务 | stdio 桥接或 HTTP 请求到正在运行的课屿 | MCP Bearer 令牌；stdio 自动读取本机配置 |
+
+这两种路径共用工具业务逻辑。内置助手逐次确认写入；外部客户端的确认流程由客户端负责，课屿仍检查参数、资料库身份、版本和编辑冲突。工具不提供整库备份／恢复接口。
 
 ## 本机客户端：stdio
 
@@ -73,7 +86,7 @@ ssh -o ExitOnForwardFailure=yes -N \
 
 ## 计划工具
 
-原有 10 个工具及其参数保持兼容：
+计划与上下文工具共 10 个：
 
 | 工具 | 用途 |
 | --- | --- |
@@ -97,7 +110,7 @@ ssh -o ExitOnForwardFailure=yes -N \
 
 ## 课程、资料与物理文件夹工具
 
-新增 15 个工具：
+课程资料工具共 15 个：
 
 | 工具 | 用途 |
 | --- | --- |
@@ -124,7 +137,7 @@ ssh -o ExitOnForwardFailure=yes -N \
 
 应用正在导入、保存或切换资料库时，工具返回稍后重试。课程、资料详情、文件夹整理或计划编辑窗口仍打开时，课程资料写入会被拒绝，请先保存并关闭编辑窗口；查询仍可使用。修改成功后界面立即刷新。
 
-本次工具只提供资料信息和物理结构管理，不读取 PDF/文档正文、不导入外部目录文件、不提供永久删除文件的工具。查询结果不包含外部原文件绝对路径。
+当前工具只提供资料信息和物理结构管理，不读取 PDF/文档正文、不导入外部目录文件、不提供永久删除文件的工具。查询结果不包含外部原文件绝对路径。
 
 ## 实现与限制
 
@@ -134,3 +147,12 @@ ssh -o ExitOnForwardFailure=yes -N \
 - 支持 MCP `2025-11-25`、`2025-06-18`、`2025-03-26`，更新版本初始化时协商至支持的版本。实现参考 [MCP 2025-11-25 传输规范](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports) 和 [工具规范](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)。
 - HTTP 无会话、无 SSE：POST 返回 JSON 或 202；GET/DELETE 返回 405。请求使用 Content-Length（stdio 桥接自动设置），暂不支持 chunked request、压缩请求体、HTTP 批量 JSON-RPC。单请求最多 1 MiB、最多 32 个并发连接、15 秒连接超时。
 - `--data-dir` 隔离启动默认不启动 MCP，避免测试资料库抢占正式端口。开发测试可创建独立 `MCPController` 并提供临时配置路径。stdio 入口也支持 `--config /absolute/path/config.json`。
+
+
+## 开发入口与恢复后的调用
+
+工具目录和输入 schema 定义在 [PlanMCPTools.swift](../Sources/TeachshelfCore/MCP/PlanMCPTools.swift) 与 [LibraryMCPTools.swift](../Sources/TeachshelfCore/MCP/LibraryMCPTools.swift)。传输由 [MCPProtocol.swift](../Sources/TeachshelfMCPKit/MCPProtocol.swift) 和 [MCPHTTPServer.swift](../Sources/TeachshelfMCPKit/MCPHTTPServer.swift) 处理；界面忙碌与编辑保护集中在 [AppToolExecutor.swift](../Sources/Teachshelf/AppToolExecutor.swift)。
+
+资料库启动恢复完成后才能进入正常服务。应用恢复备份、切库、重启或发生版本冲突后，应重新查询资料库标识、目标对象与版本，再执行写入；应用会话中的撤销记录不能作为跨重启恢复机制。若应用因恢复日志异常无法打开，先按 [备份恢复说明](backup-restore.md) 保留现场并处理，不通过工具直接修改索引或删除日志。
+
+回归命令和真实 HTTP / stdio 测试范围见 [开发指南](development.md#自动验证)。

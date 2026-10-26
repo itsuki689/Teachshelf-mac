@@ -1,6 +1,8 @@
 # 内置 AI 助手
 
-课屿 1.15.0 在侧栏提供 **AI 助手**；自 1.15.2 起与 **计划** 并排显示。用自然语言查询计划、课程和资料，调整计划内容、资料元数据及物理文件夹。它与外部 MCP 共用 25 个工具及 `AppToolExecutor`，保持相同的参数校验、资料库标识、版本检查、编辑窗口保护、物理文件事务和界面刷新。
+[项目首页](../README.md) · [MCP 接口](MCP.md) · [架构说明](architecture.md)
+
+本文对应课屿 1.16.1（77）。侧栏的 **AI 助手** 与 **计划** 并排显示。用自然语言查询计划、课程和资料，调整计划内容、资料元数据及物理文件夹。它与外部 MCP 共用 25 个工具及 `AppToolExecutor`，保持相同的参数校验、资料库标识、版本检查、编辑窗口保护、物理文件事务和界面刷新。
 
 ## 连接模型
 
@@ -9,7 +11,7 @@
 3. 填写服务中的模型 ID 和 API Key。无鉴权的本地服务可以留空密钥。
 4. 点击 **测试连接**，成功后点击 **保存配置**。
 
-自 1.16.0 起，连接配置集中在独立的 AI 助手设置页，原有地址、模型和钥匙串密钥自动沿用。切换设置分页会保留未保存的草稿；点击 **还原** 可恢复最近保存的配置。测试连接不会自动保存，切换页面或修改参数会取消测试，迟到的结果不会覆盖新状态。MCP 页只管理外部客户端的工具连接。
+连接配置集中在独立的 AI 助手设置页；从旧版本升级时沿用原有地址、模型和钥匙串密钥。切换设置分页会保留未保存的草稿；点击 **还原** 可恢复最近保存的配置。测试连接不会自动保存，切换页面或修改参数会取消测试，迟到的结果不会覆盖新状态。MCP 页只管理外部客户端的工具连接。
 
 测试只向配置的服务发送一条测试消息，要求返回 `connection_test`，不访问资料库。能聊天的模型不一定支持工具调用；测试不通过时，应检查模型、工具模板及服务配置。部分服务需要将 `reasoning_effort` 设为 `none` 才能调用工具，此时展开 **高级兼容选项**，启用 **关闭模型推理**；其他服务保持关闭。课屿不内置模型，也不下载模型权重。
 
@@ -43,6 +45,18 @@ API Key 单独保存在 macOS 钥匙串，按完整 API 地址隔离；不会进
 
 本地 HTTP 支持依据 Apple 的 [NSAllowsLocalNetworking](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowslocalnetworking) 和 [NSExceptionDomains](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsexceptiondomains) 配置，不关闭全局 ATS。
 
+## 常见问题
+
+| 现象 | 检查方式 |
+| --- | --- |
+| 能聊天但测试连接失败 | 测试还要求工具调用成功；检查模型服务的工具模板与兼容参数，必要时尝试「关闭模型推理」 |
+| 服务器连接超时 | 核对 API 地址、端口、服务器及私有网络是否在线；模型服务和 MCP 服务使用不同地址与凭据 |
+| 修改被拒绝或版本冲突 | 先关闭相关编辑窗口，重新查询当前对象；恢复备份或其他客户端修改后，不复用旧结果盲目重试 |
+| 停止后仍看到已完成的修改 | 停止会取消后续请求与待确认操作，已进入磁盘事务的操作仍需完成；以结果卡片为准 |
+| 无法读取密钥 | 解锁钥匙串并重试，避免用空密钥覆盖尚未成功读取的配置 |
+
+恢复备份本身不是聊天工具。应用启动时先完成资料库恢复，再开放正常操作；出现恢复日志错误时按 [备份恢复说明](backup-restore.md) 处理。
+
 ## 实现与验证
 
 - `AIChatClient`：Chat Completions 消息与工具调用、连接探测、响应体大小上限、超时、取消、拒绝重定向、错误信息脱敏。
@@ -52,3 +66,5 @@ API Key 单独保存在 macOS 钥匙串，按完整 API 地址隔离；不会进
 - 测试使用隔离资料库、脚本化模型和 URLProtocol HTTP 夹具，覆盖真实请求编码、工具往返、修改/拒绝/撤销、取消后的迟到回复、版本/编辑冲突及物理文件夹创建；未使用用户资料或实际第三方模型凭据。
 
 消息格式参考 [Chat Completions API](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create) 和 [Function calling](https://developers.openai.com/api/docs/guides/function-calling)。不同兼容服务仍可能存在参数差异，以连接测试为准。
+
+核心源码：[AIChatClient](../Sources/Teachshelf/AI/AIChatClient.swift)、[AIChatController](../Sources/Teachshelf/AI/AIChatController.swift)、[AIConfiguration](../Sources/Teachshelf/AI/AIConfiguration.swift)、[AppToolExecutor](../Sources/Teachshelf/AppToolExecutor.swift)。测试命令与验收口径见 [开发指南](development.md#自动验证)。
